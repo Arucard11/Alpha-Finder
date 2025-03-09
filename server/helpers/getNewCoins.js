@@ -1,67 +1,31 @@
 const axios = require("axios")
 const dotenv = require("dotenv")
 dotenv.config()
-const { connection } = require("../helpers/connection")
-const { PublicKey} = require("@solana/web3.js")
-const  {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
-} = require("@solana/spl-token")
-const borsh = require("borsh")
 
-const PUMP_FUN_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
-const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+async function getLiquid(){
+  let offset = 0
+  let more = true
+  let allCoins = []
 
- const  getBondingCurves = (mint_account)=>{
-    const [bondingCurve] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("bonding-curve"),  
-        mint_account.toBuffer()
-      ],  
-      PUMP_FUN_PROGRAM);
-    const [associatedBondingCurve] = PublicKey.findProgramAddressSync(
-      [
-        bondingCurve.toBuffer(), 
-        TOKEN_PROGRAM_ID.toBuffer(),
-        mint_account.toBuffer(), 
-      ], 
-      ASSOCIATED_TOKEN_PROGRAM_ID);
-      return {bondingCurve,associatedBondingCurve}
+  const options = {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+      'x-chain': 'solana',
+      'X-API-KEY': `${process.env.BIRDEYE_API_KEY}`
+    }
+  };
+  while(more){
+      let res = await fetch(`https://public-api.birdeye.so/defi/v3/token/list?sort_by=liquidity&sort_type=desc&min_liquidity=20000&offset=${offset}&limit=100`, options)
+      let data = await res.json()
+      offset+=100
+      allCoins = allCoins.concat(data.data.items)
+      if(data.data.items.length < 100){
+        more = false
+      }
   }
-
-async function isBonded(address){
-  const schema = { 'struct': { 
-    'discriminator': 'u64',
-    'virtualTokenReserves': 'u64', 
-    'virtualSolReserves': "u64", 
-    'realTokenReserves': 'u64', 
-    'realSolReserves': 'u64',
-    'tokenTotalSupply':'u64',
-            'complete':'bool'
-        } };
-        
-        try {
-            address = new PublicKey(address)
-            const {bondingCurve} = getBondingCurves(address)
-            
-            // Fetch bonding curve account data
-            const accountInfo = await connection.getAccountInfo(new PublicKey(bondingCurve));
-            if (!accountInfo?.data) return 0;
-        
-            // Deserialize account data
-            const {complete} = borsh.deserialize(
-              schema,
-              accountInfo.data
-            );
-        
-          
-            return complete
-          } catch (error) {
-            console.log(error)
-            return false
-          }
+return allCoins
 }
-
 
 async function getAllNewCoins(){
      
@@ -95,23 +59,11 @@ async function getAllNewCoins(){
         return diffDays <= 30 && coin.daily_volume > 10000 && coin.daily_volume !== null
       });
       
-      
-      let newCoins = []
-      for (let coin of filtered){
-        if(coin.address.slice(-4) === "pump"){
-            const bonded = await isBonded(coin.address)
-            if (bonded){
-              console.log("Bonded")
-              newCoins.push(coin)
-            }else{
-              console.log("not Bonded")
-            }
-        }else{
-          newCoins.push(coin)
-        }
-      }
-      return newCoins.length
+  let liquid = await getLiquid()
+  let newCoins = filtered.filter(coin => liquid.some(coin2 => coin2.address === coin.address));    
+  console.log(newCoins.length)
+ return newCoins
 }
 
-getAllNewCoins().then((coins)=>console.log(coins))
+
 module.exports = getAllNewCoins

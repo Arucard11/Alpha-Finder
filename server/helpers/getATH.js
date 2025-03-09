@@ -1,4 +1,5 @@
 const getAccountInfo = require("./getAccountInfo.js")
+const findTimestampLimit = require("./findTimestampLimit.js")
 const dotenv = require("dotenv")
 dotenv.config()
 
@@ -26,12 +27,12 @@ async function fetchAth(address){
           };
 
         // fetch all prices for coin in the last 30 days 
-        const res = await fetch(`https://public-api.birdeye.so/defi/history_price?address=${address}&address_type=token&time_from=${thirtyDaysAgo}&time_to=${now}&type=1m`, options)
+        const res = await fetch(`https://public-api.birdeye.so/defi/history_price?address=${address}&address_type=token&time_from=${thirtyDaysAgo}&time_to=${now}&type=15m`, options)
         const priceInfo = await res.json()
         
         if(priceInfo.data?.items){
             // get the all time high price for the coin within the last thirty days
-            const athPrice = priceInfo.data.items.reduce((acc,curr)=>{
+            const athprice = priceInfo.data.items.reduce((acc,curr)=>{
                                     return Math.max(acc,curr.value)  
                              },-Infinity)
                             
@@ -39,11 +40,12 @@ async function fetchAth(address){
             //get token supply
             const {supply,decimals} = await getAccountInfo(address)
             const tokenSupply = Number(supply) / Math.pow(10,decimals);
-            const athMarketCap = Number((tokenSupply * athPrice).toFixed(0)).toLocaleString("en-US")  
-            
-            return {athMarketCap,athPrice}             
+            const athMarketCap = Number((tokenSupply * athprice).toFixed(0))
+            let timestamps = await findTimestampLimit(tokenSupply,priceInfo.data.items.sort((a, b) => new Date(a.unixTime) - new Date(b.unixTime)),athprice)
+            timestamps.allprices = priceInfo.data.items
+            return {athMarketCap,athprice,timestamps}             
         }else{
-            return {athMarketCap:"0",athPrice:"0"}
+            return {athMarketCap:"0",athprice:"0"}
         }
     } catch (error) {
         console.error("Error fetching transactions:", error);

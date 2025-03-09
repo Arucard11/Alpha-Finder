@@ -1,43 +1,56 @@
-const getAccountInfo = require("./getAccountInfo.js")
-const dotenv = require("dotenv")
-dotenv.config()
+const dotenv = require("dotenv");
+dotenv.config();
 
-async function findTimestampLimit(address){
-    const now = Math.floor(Date.now() / 1000);
+/**
+ * Returns early, late, twoMillion, and fiveMillion timestamps for a coin’s price history over the last 30 days.
+ *
+ * Note: The prices array is sorted with the oldest prices first.
+ *
+ * @param {number} tokenSupply - The maximum number of coins available.
+ * @param {Array<Object>} prices - Array of price objects (each with keys: value, unixTime).
+ * @param {number|string} athprice - The all time high price of the coin.
+ * @returns {Object} An object with { early, late, twoMillion, fiveMillion } timestamps.
+ */
+async function findTimestampLimit(tokenSupply, prices, athprice) {
+  // Convert athprice to a number if necessary.
+  const ath = parseFloat(athprice);
 
-    // Get the timestamp for 30 days ago (30 * 24 * 60 * 60 seconds)
-    const thirtyDaysAgo = now - (30 * 24 * 60 * 60);
+  // Calculate the ATH market cap.
+  const athMarketCap = ath * tokenSupply;
 
-    const price = {
-        method: 'GET',
-        headers: {
-          accept: 'application/json',
-          'x-chain': 'solana',
-          'X-API-KEY': `${process.env.BIRDEYE_API_KEY}`
-        }
-      };
+  // Define threshold percentages relative to ATH market cap.
+  // We now want the early timestamp to be when market cap reaches about 30% of ATH cap,
+  // and the late timestamp to be when it reaches 30% * 1.3 (~39%) of ATH cap.
+  let earlyCapThreshold = 0.20 * athMarketCap;
+  let lateCapThreshold = 0.60 * 1.3 * athMarketCap;
 
-    // fetch all prices for coin in the last 30 days 
-    const response = await fetch(`https://public-api.birdeye.so/defi/history_price?address=${address}&address_type=token&time_from=${thirtyDaysAgo}&time_to=${now}&type=1m`, price)
-    const priceInfo = await response.json()
-    const {supply,decimals} = await getAccountInfo(address)
-    const tokenSupply = Number(supply) / Math.pow(10,decimals);
-    let prices = priceInfo.data.items.sort((a, b) => new Date(a.unixTime) - new Date(b.unixTime))
-    let early
-    let late
-    for(let price of prices){
-      
-      if(price.value * tokenSupply >= 200000){
-        // console.log("final Timestamp before 200k",price.unixTime)
-        // console.log(num)
-        early = price.unixTime
-      }else if(price.value * tokenSupply >= 500000){
-        late = price.unixTime
-      }
-      
-    }
-    return {early,late}
+  // Because the array is sorted oldest first, find the first price that meets the thresholds.
+  let earlyEntry = prices.find(price => (price.value * tokenSupply) >= earlyCapThreshold);
+  let lateEntry  = prices.find(price => (price.value * tokenSupply) >= lateCapThreshold);
+
+  // Extract the timestamps (if found).
+  let early = earlyEntry ? earlyEntry.unixTime : null;
+  let late  = lateEntry ? lateEntry.unixTime : null;
+
+  // If the early timestamp is among the oldest 11 entries,
+  // assume the threshold is too low and adjust upward.
+  if (prices.slice(0, 11).some(price => price.unixTime === early)) {
+    earlyCapThreshold = 0.40 * athMarketCap;
+    lateCapThreshold  = 0.70 * 1.3 * athMarketCap;  // 40% and roughly 52%
+    earlyEntry = prices.find(price => (price.value * tokenSupply) >= earlyCapThreshold);
+    lateEntry  = prices.find(price => (price.value * tokenSupply) >= lateCapThreshold);
+    early = earlyEntry ? earlyEntry.unixTime : early;
+    late  = lateEntry ? lateEntry.unixTime : late;
+  }
+
+  // Additional thresholds: absolute market cap thresholds for 2 million and 5 million.
+  let twoMillionEntry = prices.find(price => (price.value * tokenSupply) >= 2000000);
+  let fiveMillionEntry = prices.find(price => (price.value * tokenSupply) >= 5000000);
+
+  const twoMillion = twoMillionEntry ? twoMillionEntry.unixTime : null;
+  const fiveMillion = fiveMillionEntry ? fiveMillionEntry.unixTime : null;
+
+  return { early, late, twoMillion, fiveMillion };
 }
 
-// findTimestampLimit("6zkZPeSVSynKoNgPjb6yCfJ5BFFro4gcKXuMrPtvpump")
-module.exports = findTimestampLimit
+module.exports = findTimestampLimit;
