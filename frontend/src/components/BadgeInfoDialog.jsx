@@ -26,9 +26,7 @@ function BadgeInfoDialog({ open, handleClose }) {
             <Typography variant="h6" sx={{ mr: 1 }}>
               {badge.emoji}
             </Typography>
-            <Typography variant="body1">
-              {badge.description}
-            </Typography>
+            <Typography variant="body1">{badge.description}</Typography>
           </Box>
         ))}
       </DialogContent>

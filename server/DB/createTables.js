@@ -4,10 +4,13 @@ dotenv.config()
 const { Pool } = require('pg');
 
 const pool = new Pool({
-  connectionString:`postgresql://postgres.yehtchekqvcjteijqojt:${process.env.PG_PASSWORD}@aws-0-us-west-1.pooler.supabase.com:5432/postgres`,
-  ssl: { rejectUnauthorized: false },
-});
-
+  host:process.env.PG_HOST,
+  port:process.env.PG_PORT ,
+  database:process.env.PG_DATABASE ,
+  user:process.env.PG_USER ,
+  password:process.env.PG_PASSWORD,
+   
+ });
 const createTablesQuery = `
 -- Create wallets table
 CREATE TABLE IF NOT EXISTS wallets (

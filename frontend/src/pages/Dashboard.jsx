@@ -1,17 +1,16 @@
-import React, { useState } from 'react';
+// src/pages/Dashboard.jsx
+import React from 'react';
 import { Box, Grid } from '@mui/material';
-import NavBar from './components/NavBar';
-import Leaderboard from './components/Leaderboard';
-import BadgeInfoDialog from './components/BadgeInfoDialog';
+import NavBar from '../components/NavBar';
+import Leaderboard from '../components/Leaderboard';
+import BadgeInfoDialog from '../components/BadgeInfoDialog';
 
 function Dashboard() {
-  const [dialogOpen, setDialogOpen] = useState(false);
-
   return (
     <>
       <NavBar />
-      <Box sx={{ p: 4, minHeight: '100vh' }}>
-        <Grid container spacing={4}>
+      <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
+        <Grid container spacing={4} justifyContent="center">
           <Grid item xs={12} md={6}>
             <Leaderboard title="All-Time Leaderboard" category="allTime" />
           </Grid>
@@ -25,7 +24,7 @@ function Dashboard() {
             <Leaderboard title="7-Day Leaderboard" category="7d" />
           </Grid>
         </Grid>
-        <BadgeInfoDialog open={dialogOpen} handleClose={() => setDialogOpen(false)} />
+        <BadgeInfoDialog />
       </Box>
     </>
   );

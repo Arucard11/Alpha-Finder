@@ -1,102 +1,81 @@
+// src/components/RunnerCard.jsx
 import React, { useState } from 'react';
-import { Box, Avatar, Typography, Button, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Box, Avatar, Typography, Button, ToggleButtonGroup, ToggleButton, Divider } from '@mui/material';
 import {
-  LineChart,
+  ComposedChart,
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  ReferenceLine,
+  Legend,
   ResponsiveContainer,
+  Scatter,
 } from 'recharts';
 
-// Calculate PnL from transactions (unchanged)
-function calculatePnL(transactions) {
-  const buyTotal = transactions.buy.reduce((acc, tx) => acc + tx.price * tx.amount, 0);
-  const sellTotal = transactions.sell.reduce((acc, tx) => acc + tx.price * tx.amount, 0);
-  return sellTotal - buyTotal;
+// Sort and prepare line chart data from the allprices array (last 30 days)
+function prepareLineChartData(allPrices) {
+  const sorted = [...allPrices].sort((a, b) => a.unixTime - b.unixTime);
+  const now = Date.now() / 1000;
+  const thirtyDaysAgo = now - 30 * 24 * 3600;
+  return sorted
+    .filter(item => item.unixTime >= thirtyDaysAgo)
+    .map(item => ({
+      date: new Date(item.unixTime * 1000).toISOString().split('T')[0],
+      value: item.value,
+    }));
 }
 
-// Create a combined data array using runner.timestamps.allprices along with buy/sell events
-function prepareCombinedChartData(runner) {
-  const data = [];
-  // Use the provided allprices array (inside runner.timestamps)
-  if (runner.timestamps && Array.isArray(runner.timestamps.allprices)) {
-    runner.timestamps.allprices.forEach((item) => {
-      data.push({ time: item.unixTime, price: item.value });
-    });
-  }
-  // Add buy events
-  runner.transactions.buy.forEach((tx) => {
-    data.push({ time: tx.timestamp, buy: tx.price });
-  });
-  // Add sell events
-  runner.transactions.sell.forEach((tx) => {
-    data.push({ time: tx.timestamp, sell: tx.price });
-  });
-  // Sort by time
-  data.sort((a, b) => a.time - b.time);
-  // Merge data points with the same time
-  const mergedData = [];
-  data.forEach((dp) => {
-    const last = mergedData[mergedData.length - 1];
-    if (last && last.time === dp.time) {
-      mergedData[mergedData.length - 1] = { ...last, ...dp };
-    } else {
-      mergedData.push(dp);
-    }
-  });
-  return mergedData;
-}
-
-// Format unix timestamp (assumed in seconds) to a date string
-function formatDate(timestamp) {
-  const date = new Date(timestamp * 1000);
-  return date.toLocaleDateString();
+// Prepare markers for transactions: buys and sells including timestamps
+function prepareMarkers(transactions) {
+  const buys = transactions.buy.map(tx => ({
+    date: new Date(tx.timestamp * 1000).toISOString().split('T')[0],
+    price: tx.price,
+    amount: tx.amount,
+    type: 'Buy',
+    timestamp: tx.timestamp,
+  }));
+  const sells = transactions.sell.map(tx => ({
+    date: new Date(tx.timestamp * 1000).toISOString().split('T')[0],
+    price: tx.price,
+    amount: tx.amount,
+    type: 'Sell',
+    timestamp: tx.timestamp,
+  }));
+  return { buys, sells };
 }
 
 function RunnerCard({ runner }) {
   const [showChart, setShowChart] = useState(false);
-  const [chartType, setChartType] = useState('line'); // 'line' or 'bar'
-  const pnl = calculatePnL(runner.transactions);
-  
-  // Prepare combined data for the chart
-  const combinedData = prepareCombinedChartData(runner);
 
-  // For the bar chart, aggregate total buy and sell prices (example aggregation)
-  const totalBuy = runner.transactions.buy.reduce((acc, tx) => acc + tx.price, 0);
-  const totalSell = runner.transactions.sell.reduce((acc, tx) => acc + tx.price, 0);
-  const barData = [
-    { name: 'Buy', value: totalBuy },
-    { name: 'Sell', value: totalSell },
-    { name: 'ATH', value: parseFloat(runner.athprice) },
-  ];
+  // Calculate profit and loss for the runner
+  const pnl = runner.transactions.sell.reduce((acc, tx) => acc + tx.price * tx.amount, 0) -
+              runner.transactions.buy.reduce((acc, tx) => acc + tx.price * tx.amount, 0);
+
+  const lineChartData = prepareLineChartData(runner.timestamps.allprices);
+  const { buys, sells } = prepareMarkers(runner.transactions);
+
+  // Combine buys and sells and sort by timestamp
+  const allTransactions = [...buys, ...sells].sort((a, b) => a.timestamp - b.timestamp);
 
   return (
     <Box
       sx={{
         mb: 2,
         p: 2,
-        border: '1px solid #ccc',
+        border: '1px solid #ddd',
         borderRadius: '8px',
-        boxShadow: '0 0 5px rgba(0,0,0,0.2)',
-        background: '#fff',
+        background: '#fafafa',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-        <Avatar
-          src={runner.logouri}
-          alt={runner.name}
-          sx={{ width: 56, height: 56, mr: 2 }}
-        />
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, flexWrap: 'wrap' }}>
+        <Avatar src={runner.logouri} alt={runner.name} sx={{ width: 56, height: 56, mr: 2 }} />
         <Box>
-          <Typography variant="subtitle1">
+          <Typography variant="subtitle1" sx={{ color: '#333' }}>
             {runner.name} ({runner.symbol})
           </Typography>
-          <Typography variant="body2">
+          <Typography variant="body2" sx={{ color: '#555' }}>
             Score: {runner.score.toFixed(2)}
           </Typography>
           <Typography variant="body2" sx={{ color: pnl >= 0 ? 'green' : 'red' }}>
@@ -104,69 +83,91 @@ function RunnerCard({ runner }) {
           </Typography>
         </Box>
         <Box sx={{ ml: 'auto' }}>
-          <Button variant="outlined" size="small" onClick={() => setShowChart((prev) => !prev)}>
+          <Button variant="outlined" size="small" onClick={() => setShowChart(prev => !prev)}>
             {showChart ? 'Hide Chart' : 'Show Chart'}
           </Button>
         </Box>
       </Box>
       {showChart && (
-        <Box>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={chartType}
-            onChange={(e, newType) => {
-              if (newType) setChartType(newType);
-            }}
-            sx={{ mb: 1 }}
-          >
-            <ToggleButton value="line">Line</ToggleButton>
-            <ToggleButton value="bar">Bar</ToggleButton>
+        <>
+          <ToggleButtonGroup size="small" exclusive value="line" sx={{ mb: 1 }}>
+            <ToggleButton value="line">Line Graph</ToggleButton>
           </ToggleButtonGroup>
-          <Box sx={{ width: '100%', height: 60 }}>
+          <Box sx={{ width: '100%', height: 150 }}>
             <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'line' ? (
-                <LineChart data={combinedData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
-                  <XAxis dataKey="time" tickFormatter={formatDate} tick={{ fill: '#000', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#000', fontSize: 10 }} />
-                  <Tooltip 
-                    labelFormatter={(label) => formatDate(label)}
-                    contentStyle={{ backgroundColor: '#eee', border: 'none', borderRadius: '5px', color: '#000' }}
+              <ComposedChart data={lineChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
+                <XAxis dataKey="date" tick={{ fill: '#333', fontSize: 10 }} />
+                <YAxis tick={{ fill: '#333', fontSize: 10 }} />
+                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', color: '#333' }} />
+                <Legend wrapperStyle={{ color: '#333', fontSize: '0.8rem' }} />
+                <Line type="monotone" dataKey="value" stroke="#1976d2" strokeWidth={2} name="Price" dot={false} />
+                {buys.length > 0 && (
+                  <Scatter
+                    data={buys}
+                    dataKey="price"
+                    fill="#00e676"
+                    name="Buy"
+                    label={({ payload, x, y }) => {
+                      if (!payload || payload.amount == null) return null;
+                      return (
+                        <text x={x} y={y - 10} fill="#00e676" fontSize={10} textAnchor="middle">
+                          {Number(payload.amount).toFixed(2)}
+                        </text>
+                      );
+                    }}
                   />
-                  <Line type="monotone" dataKey="buy" stroke="#00bcd4" activeDot={{ r: 3 }} dot={false} strokeWidth={2} />
-                  <Line type="monotone" dataKey="sell" stroke="#f44336" activeDot={{ r: 3 }} dot={false} strokeWidth={2} />
-                  <Line type="monotone" dataKey="price" stroke="#4caf50" activeDot={{ r: 3 }} dot={false} strokeWidth={2} />
-                  {/* Optionally, add reference lines for key timestamps if desired */}
-                  {runner.twoMillion && (
-                    <ReferenceLine
-                      x={runner.twoMillion}
-                      stroke="#ff9800"
-                      strokeDasharray="3 3"
-                      label={{ value: '2M', fill: '#ff9800', fontSize: 10 }}
-                    />
-                  )}
-                  {runner.fiveMillion && (
-                    <ReferenceLine
-                      x={runner.fiveMillion}
-                      stroke="#9c27b0"
-                      strokeDasharray="3 3"
-                      label={{ value: '5M', fill: '#9c27b0', fontSize: 10 }}
-                    />
-                  )}
-                </LineChart>
-              ) : (
-                <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
-                  <XAxis dataKey="name" tick={{ fill: '#000', fontSize: 10 }} />
-                  <YAxis tick={{ fill: '#000', fontSize: 10 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#eee', border: 'none', borderRadius: '5px', color: '#000' }} />
-                  <Bar dataKey="value" fill="#00bcd4" />
-                </BarChart>
-              )}
+                )}
+                {sells.length > 0 && (
+                  <Scatter
+                    data={sells}
+                    dataKey="price"
+                    fill="#ff5252"
+                    name="Sell"
+                    label={({ payload, x, y }) => {
+                      if (!payload || payload.amount == null) return null;
+                      return (
+                        <text x={x} y={y - 10} fill="#ff5252" fontSize={10} textAnchor="middle">
+                          {Number(payload.amount).toFixed(2)}
+                        </text>
+                      );
+                    }}
+                  />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           </Box>
-        </Box>
+          <Divider sx={{ my: 2 }} />
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 'bold' }}>
+              Transactions (sorted by time):
+            </Typography>
+            {allTransactions.map((tx, idx) => (
+              <Box
+                key={idx}
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 0.5,
+                  p: 0.5,
+                  background: tx.type === 'Buy' ? 'rgba(0,230,118,0.1)' : 'rgba(255,82,82,0.1)',
+                  borderRadius: '4px',
+                }}
+              >
+                <Typography variant="caption" sx={{ width: '30%', color: '#555' }}>
+                  {new Date(tx.timestamp * 1000).toLocaleString()}
+                </Typography>
+                <Typography variant="caption" sx={{ width: '20%', color: tx.type === 'Buy' ? '#00e676' : '#ff5252' }}>
+                  {tx.type}
+                </Typography>
+                <Typography variant="caption" sx={{ width: '50%', color: '#555' }}>
+                  Total: {(tx.price * tx.amount).toFixed(2)}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </>
       )}
     </Box>
   );

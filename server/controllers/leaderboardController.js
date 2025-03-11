@@ -1,44 +1,32 @@
-const {getAllWallets} = require('../DB/querys.js')
+const {getHighestConfidenceWallets,getWalletsDynamic} = require('../DB/querys.js')
 const filterTool = require('../helpers/filterTools.js')
-
+require("dotenv").config()
 
 // Controller for all-time high leaderboard
 exports.getAllTimeLeaderboard = async (req, res) => {
   try {
-    const unfiltered = await getAllWallets();
-    res.json({ data: unfiltered });
+    const {offset} = req.body 
+    const topWallets = await getHighestConfidenceWallets(offset)
+    
+    res.json({data:topWallets})
+
   } catch (error) {
     console.error('Error fetching all-time leaderboard:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
   // Controller for 90-day leaderboard
-  exports.get90DayLeaderboard = async(req, res) => {
+  exports.getDayLeaderboard = async(req, res) => {
     // Your logic to retrieve the 90-day leaderboard
     try{
-      let unfiltered = await getAllWallets()
-      let filtered = filterTool.getWalletsWithTransactionsWithin90Days(unfiltered)
-  
-      res.json({ data: filtered });
-
+      const {days, offset,sort} = req.body
+      const wallets = await getWalletsDynamic(days,offset,sort)
+      console.log(wallets)
+      res.json({data:wallets})
     }catch(e){
       res.status(500).json({ error: 'Internal Server Error' });
     }
   };
   
-  // Controller for 30-day leaderboard
-  exports.get30DayLeaderboard = async(req, res) => {
-    // Your logic to retrieve the 30-day leaderboard
-    let unfiltered = await getAllWallets()
-    let filtered = filterTool.getWalletsWithTransactionsWithin30Days(unfiltered)
-    res.json({ data: filtered });
-  };
-  
-  // Controller for 7-day leaderboard
-  exports.get7DayLeaderboard = async(req, res) => {
-    // Your logic to retrieve the 7-day leaderboard
-    let unfiltered = await getAllWallets()
-    let filtered = filterTool.getWalletsWithTransactionsWithin7Days(unfiltered)
-    res.json({ data: filtered });
-  };
+
   

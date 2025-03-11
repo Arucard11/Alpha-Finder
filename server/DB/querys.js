@@ -3,8 +3,12 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 const pool = new Pool({
-  connectionString:`postgresql://postgres.yehtchekqvcjteijqojt:${process.env.PG_PASSWORD}@aws-0-us-west-1.pooler.supabase.com:5432/postgres`,
-  ssl: { rejectUnauthorized: false },
+ host:process.env.PG_HOST,
+ port:process.env.PG_PORT ,
+ database:process.env.PG_DATABASE ,
+ user:process.env.PG_USER ,
+ password:process.env.PG_PASSWORD,
+  
 });
 
 // Helper function to validate and sanitize strings.
@@ -123,7 +127,97 @@ async function getWalletByAddress(address) {
 }
 
 
+/**
+ * Retrieves wallets ordered by highest confidence_score.
+ * Returns 50 records per call based on the provided offset.
+ *
+ * @param {number} [offset=0] - Number of records to skip for pagination.
+ * @returns {Promise<Array>} - Array of wallet objects.
+ */
+async function getHighestConfidenceWallets(offset = 0) {
+  const limit = 50;
+  const query = `
+    SELECT *
+    FROM wallets
+    ORDER BY confidence_score DESC, id ASC
+    LIMIT $1 OFFSET $2;
+  `;
 
+  try {
+    const result = await pool.query(query, [limit, offset]);
+    return result.rows;
+  } catch (error) {
+    console.error('Error in getHighestConfidenceWallets:', error);
+    throw error;
+  }
+}
+
+
+/**
+ * Retrieves wallets that have at least one runner with a buy transaction within the last `days` days.
+ * The results can be sorted by either highest confidence score or by the number of matching runners.
+ * Returns 50 records at a time using an offset.
+ *
+ * @param {number} [days=90] - Number of days to look back.
+ * @param {number} [offset=0] - Number of records to skip for pagination.
+ * @param {string} [sortBy='confidence'] - Sorting criteria: 'confidence' or 'runners'.
+ * @returns {Promise<Array>} - Array of wallet objects.
+ */
+async function getWalletsDynamic(days = 90, offset = 0, sortBy = 'confidence') {
+  // Calculate Unix time threshold (current time minus N days in seconds)
+  const unixTimeThreshold = Math.floor(Date.now() / 1000) - days * 86400;
+  const limit = 50;
+  let query;
+  let params = [unixTimeThreshold, limit, offset];
+
+  if (sortBy === 'runners') {
+    // Order by the count of matching runners (with a buy transaction meeting the time criteria),
+    // then by confidence_score (in descending order) and id (ascending for tie-breaker)
+    query = `
+      SELECT w.*,
+        (
+          SELECT COUNT(*)
+          FROM jsonb_array_elements(w.runners) AS runner
+          WHERE EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
+            WHERE (buyTx->>'unixTime')::BIGINT >= $1
+          )
+        ) AS matching_runners
+      FROM wallets w
+      WHERE EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(w.runners) AS runner,
+             jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
+        WHERE (buyTx->>'unixTime')::BIGINT >= $1
+      )
+      ORDER BY matching_runners DESC, confidence_score DESC, id ASC
+      LIMIT $2 OFFSET $3;
+    `;
+  } else {
+    // Default: order by highest confidence score
+    query = `
+      SELECT *
+      FROM wallets
+      WHERE EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(runners) AS runner,
+             jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
+        WHERE (buyTx->>'unixTime')::BIGINT >= $1
+      )
+      ORDER BY confidence_score DESC, id ASC
+      LIMIT $2 OFFSET $3;
+    `;
+  }
+
+  try {
+    const result = await pool.query(query, params);
+    return result.rows;
+  } catch (error) {
+    console.error('Error in getWalletsDynamic:', error);
+    throw error;
+  }
+}
 
 
 /**
@@ -260,8 +354,10 @@ async function updateRunner(id, field, value) {
     addRunner,
     updateRunner,
     getAllWallets,
+    getHighestConfidenceWallets,
     getAllRunners,
     addFiltered,
+    getWalletsDynamic,
     getAllFiltered,
     pool,
   };

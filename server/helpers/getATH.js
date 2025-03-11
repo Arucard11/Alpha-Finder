@@ -27,7 +27,7 @@ async function fetchAth(address){
           };
 
         // fetch all prices for coin in the last 30 days 
-        const res = await fetch(`https://public-api.birdeye.so/defi/history_price?address=${address}&address_type=token&time_from=${thirtyDaysAgo}&time_to=${now}&type=15m`, options)
+        const res = await fetch(`https://public-api.birdeye.so/defi/history_price?address=${address}&address_type=token&time_from=${thirtyDaysAgo}&time_to=${now}&type=1m`, options)
         const priceInfo = await res.json()
         
         if(priceInfo.data?.items){

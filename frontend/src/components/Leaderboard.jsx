@@ -1,117 +1,84 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Typography, Grid, ToggleButton, ToggleButtonGroup } from '@mui/material';
-import { AnimatePresence, motion } from 'framer-motion';
-import WalletCard from './WalletCard';
-import Filters from './Filters';
-import fetchLeaderboardData from '../api';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
+// src/pages/LeaderboardPage.jsx
+import React, { useState, useEffect, useCallback } from 'react';
+import { Box, CircularProgress, Container } from '@mui/material';
+import WalletCard from '../components/WalletCard';
+import Filters from '../components/Filters';
+import { fetchLeaderboardData } from '../api';
 
-function Leaderboard({ title, category }) {
-  const [wallets, setWallets] = useState([]);
-  const [viewMode, setViewMode] = useState('cards'); // "cards" or "chart"
+function LeaderboardPage({category}) {
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(false);
+ // Can be 'allTime', '7-day', '30-day', '90-day'
+  const [sortBy, setSortBy] = useState('confidence');
+  const [badgeFilter, setBadgeFilter] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchLeaderboardData(category, offset, sortBy);
+      setLeaderboard(prev => [...prev, ...data]);
+      setOffset(prev => prev + 50);
+    } catch (error) {
+      console.error(error);
+    }
+    setLoading(false);
+  }, [category, offset, sortBy]);
 
   useEffect(() => {
-    fetchLeaderboardData(category).then((data) => setWallets(data));
-  }, [category]);
+    loadData();
+  }, [loadData]);
 
-  // Prepare aggregated data for chart view
-  const aggregatedData = wallets.map((wallet) => {
-    let avgRunner = 0;
-    if (wallet.runners && wallet.runners.length > 0) {
-      avgRunner = wallet.runners.reduce((sum, runner) => sum + runner.score, 0) / wallet.runners.length;
-    }
-    return {
-      address: wallet.address,
-      confidence: wallet.confidence,
-      avgRunner: parseFloat(avgRunner.toFixed(2)),
+  // Infinite scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500 && !loading) {
+        loadData();
+      }
     };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [loading, loadData]);
+
+  // Filter leaderboard by badgeFilter and searchQuery
+  const filteredLeaderboard = leaderboard.filter(wallet => {
+    let matchesBadge = true;
+    if (badgeFilter.length > 0) {
+      // Convert both wallet badges and filter selections to lowercase for comparison
+      matchesBadge = badgeFilter.every(b =>
+        wallet.badges.map(x => x.toLowerCase()).includes(b.toLowerCase())
+      );
+    }
+    let matchesSearch = true;
+    if (searchQuery.trim() !== '') {
+      matchesSearch = wallet.address.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+    return matchesBadge && matchesSearch;
   });
 
   return (
-    <Box
-      sx={{
-        p: 2,
-        background: '#fff',
-        border: '1px solid #e0e0e0',
-        borderRadius: '8px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        minHeight: '400px',
-      }}
-    >
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h5" color="textPrimary">
-          {title}
-        </Typography>
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          value={viewMode}
-          onChange={(e, newView) => {
-            if (newView) setViewMode(newView);
-          }}
-          color="secondary"
-        >
-          <ToggleButton value="cards">Cards</ToggleButton>
-          <ToggleButton value="chart">Chart</ToggleButton>
-        </ToggleButtonGroup>
+    <Container sx={{ py: 4 }}>
+      <Filters
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        badgeFilter={badgeFilter}
+        setBadgeFilter={setBadgeFilter}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+      />
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {filteredLeaderboard.map((wallet, idx) => (
+          <WalletCard key={wallet.id} wallet={wallet} rank={idx + 1} />
+        ))}
       </Box>
-      <Filters />
-      <AnimatePresence>
-        {viewMode === 'cards' ? (
-          <motion.div
-            key="cards"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <Grid container spacing={2}>
-              {wallets.map((wallet, idx) => (
-                <Grid item xs={12} key={wallet.address}>
-                  <WalletCard wallet={wallet} rank={idx + 1} />
-                </Grid>
-              ))}
-            </Grid>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="chart"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5 }}
-            style={{ width: '100%', height: 300 }}
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={aggregatedData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
-                <XAxis dataKey="address" tick={{ fill: '#000', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#000', fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: 'none',
-                    borderRadius: '5px',
-                    color: '#000',
-                  }}
-                />
-                <Bar dataKey="confidence" fill="#1976d2" name="Confidence" />
-                <Bar dataKey="avgRunner" fill="#dc004e" name="Avg Runner Score" />
-              </BarChart>
-            </ResponsiveContainer>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Box>
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+          <CircularProgress />
+        </Box>
+      )}
+    </Container>
   );
 }
 
-export default Leaderboard;
+export default LeaderboardPage;
