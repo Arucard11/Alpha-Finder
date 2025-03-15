@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-color: #0ff; /* Neon Blue */
+  --secondary-color: #ff00ff; /* Neon Pink */
+  --background-color: #0a0a0a;
+  --text-color: #ffffff;
+}
+
+body {
+  @apply bg-black text-white font-sans;
+  background: radial-gradient(circle, rgba(10,10,10,1) 0%, rgba(5,5,5,1) 100%);
+}
+
+.neon-text {
+  text-shadow: 0 0 5px var(--primary-color), 0 0 10px var(--primary-color), 0 0 20px var(--primary-color);
+}
+
+.glassmorphism {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 10px;
+}
+
+.neon-border {
+  border: 2px solid var(--primary-color);
+  box-shadow: 0 0 10px var(--primary-color);
+}

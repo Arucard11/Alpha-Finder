@@ -1,33 +1,32 @@
 // src/pages/Dashboard.jsx
 import React from 'react';
-import { Box, Grid } from '@mui/material';
-import NavBar from '../components/NavBar';
-import Leaderboard from '../components/Leaderboard';
-import BadgeInfoDialog from '../components/BadgeInfoDialog';
+import Header from '../components/Header';
+import LeaderboardContainer from '../components/LeaderboardContainer';
+import CoinConveyer from '../components/CoinConveyer';
+import { Container, Grid } from '@mui/material';
+import { useLocation } from 'react-router-dom';
 
-function Dashboard() {
+const Dashboard = () => {
+  const location = useLocation();
+  const isAdmin = location.state?.isAdmin || false;
+
   return (
-    <>
-      <NavBar />
-      <Box sx={{ p: 4, maxWidth: 1200, mx: 'auto' }}>
-        <Grid container spacing={4} justifyContent="center">
-          <Grid item xs={12} md={6}>
-            <Leaderboard title="All-Time Leaderboard" category="allTime" />
+    <div>
+      <Header isAdmin={isAdmin} />
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Grid container spacing={4}>
+          {/* Leaderboard on top */}
+          <Grid item xs={12}>
+            <LeaderboardContainer />
           </Grid>
-          <Grid item xs={12} md={6}>
-            <Leaderboard title="90-Day Leaderboard" category="90d" />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Leaderboard title="30-Day Leaderboard" category="30d" />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Leaderboard title="7-Day Leaderboard" category="7d" />
+          {/* Coins conveyer on bottom */}
+          <Grid item xs={12}>
+            <CoinConveyer />
           </Grid>
         </Grid>
-        <BadgeInfoDialog />
-      </Box>
-    </>
+      </Container>
+    </div>
   );
-}
+};
 
 export default Dashboard;

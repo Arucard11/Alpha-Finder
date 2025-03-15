@@ -8,7 +8,7 @@ exports.getAllTimeLeaderboard = async (req, res) => {
     const {offset} = req.body 
     const topWallets = await getHighestConfidenceWallets(offset)
     
-    res.json({data:topWallets})
+    res.json(topWallets)
 
   } catch (error) {
     console.error('Error fetching all-time leaderboard:', error);
@@ -22,7 +22,7 @@ exports.getAllTimeLeaderboard = async (req, res) => {
       const {days, offset,sort} = req.body
       const wallets = await getWalletsDynamic(days,offset,sort)
       console.log(wallets)
-      res.json({data:wallets})
+      res.json(wallets)
     }catch(e){
       res.status(500).json({ error: 'Internal Server Error' });
     }

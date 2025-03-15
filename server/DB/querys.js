@@ -163,16 +163,15 @@ async function getHighestConfidenceWallets(offset = 0) {
  * @param {string} [sortBy='confidence'] - Sorting criteria: 'confidence' or 'runners'.
  * @returns {Promise<Array>} - Array of wallet objects.
  */
-async function getWalletsDynamic(days = 90, offset = 0, sortBy = 'confidence') {
-  // Calculate Unix time threshold (current time minus N days in seconds)
+async function getWalletsDynamic(days, offset, sortBy) {
   const unixTimeThreshold = Math.floor(Date.now() / 1000) - days * 86400;
   const limit = 50;
   let query;
   let params = [unixTimeThreshold, limit, offset];
 
+  console.log('Unix Time Threshold:', unixTimeThreshold);
+
   if (sortBy === 'runners') {
-    // Order by the count of matching runners (with a buy transaction meeting the time criteria),
-    // then by confidence_score (in descending order) and id (ascending for tie-breaker)
     query = `
       SELECT w.*,
         (
@@ -181,7 +180,7 @@ async function getWalletsDynamic(days = 90, offset = 0, sortBy = 'confidence') {
           WHERE EXISTS (
             SELECT 1
             FROM jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-            WHERE (buyTx->>'unixTime')::BIGINT >= $1
+            WHERE (buyTx->>'timestamp')::BIGINT >= $1
           )
         ) AS matching_runners
       FROM wallets w
@@ -189,13 +188,12 @@ async function getWalletsDynamic(days = 90, offset = 0, sortBy = 'confidence') {
         SELECT 1
         FROM jsonb_array_elements(w.runners) AS runner,
              jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-        WHERE (buyTx->>'unixTime')::BIGINT >= $1
+        WHERE (buyTx->>'timestamp')::BIGINT >= $1
       )
       ORDER BY matching_runners DESC, confidence_score DESC, id ASC
       LIMIT $2 OFFSET $3;
     `;
   } else {
-    // Default: order by highest confidence score
     query = `
       SELECT *
       FROM wallets
@@ -203,12 +201,14 @@ async function getWalletsDynamic(days = 90, offset = 0, sortBy = 'confidence') {
         SELECT 1
         FROM jsonb_array_elements(runners) AS runner,
              jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-        WHERE (buyTx->>'unixTime')::BIGINT >= $1
+        WHERE (buyTx->>'timestamp')::BIGINT >= $1
       )
       ORDER BY confidence_score DESC, id ASC
       LIMIT $2 OFFSET $3;
     `;
   }
+
+  console.log('Executing Query:', query);
 
   try {
     const result = await pool.query(query, params);
@@ -265,6 +265,7 @@ async function getAllFiltered() {
       throw err;
     }
   }
+
 
 /**
  * Add a new runner record.
@@ -347,8 +348,70 @@ async function updateRunner(id, field, value) {
     }
   }
 
+
+async function getWhitelist(){
+  try {
+    const result = await pool.query('SELECT * FROM whitelist;');
+    return result.rows;
+  } catch (err) {
+    console.error('Error fetching runners:', err);
+    throw err;
+  }
+}
+
+
+async function addWhitelist(data) {
+  let { address, name } = data;
+  // Set a default name if none provided
+  name = name || 'Unknown'; // or you can use an empty string: name = name || '';
+
+  const sanitizedAddress = sanitizeString(address);
+  const sanitizedName = sanitizeString(name); // Optional: sanitize the name as well
+
+  const query = `
+    INSERT INTO whitelist (wallet_address, name)
+    VALUES ($1, $2)
+    RETURNING *;
+  `;
+
+  try {
+    const result = await pool.query(query, [sanitizedAddress, sanitizedName]);
+    return result.rows[0];
+  } catch (err) {
+    console.error('Error inserting record into whitelist:', err);
+    throw err;
+  }
+}
+
+
+/**
+ * Deletes a record from the whitelist table based on the given wallet address.
+ *
+ * @param {string} walletAddress - The wallet address to delete.
+ * @returns {Promise<number>} - The number of rows deleted.
+ */
+async function deleteWhitelist(walletAddress) {
+  const query = `
+    DELETE FROM whitelist
+    WHERE wallet_address = $1;
+  `;
+
+  try {
+    const result = await pool.query(query, [walletAddress]);
+    console.log(`Deleted ${result.rowCount} record(s) for wallet address: ${walletAddress}`);
+    return result.rowCount;
+  } catch (error) {
+    console.error('Error deleting from whitelist:', error);
+    throw error;
+  }
+}
+
+
   module.exports = {
     addWallet,
+    getWhitelist,
+    addWhitelist,
+    deleteWhitelist,
     updateWallet,
     getWalletByAddress,
     addRunner,

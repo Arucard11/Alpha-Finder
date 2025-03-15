@@ -1,157 +1,98 @@
 // src/components/WalletCard.jsx
-import React from 'react';
-import {
-  Paper,
-  Typography,
-  Chip,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Box,
-  IconButton,
-  Tooltip,
-} from '@mui/material';
-import { motion } from 'framer-motion';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import RunnerCard from './RunnerCard';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import React, { useState } from 'react';
+import { Card, CardContent, Typography, Button, Box, Chip, Divider } from '@mui/material';
+import RunnerAccordion from './RunnerAccordion';
 
-const MotionPaper = motion(Paper);
-
-const badgeMapping = {
-  'legendary buyer': { emoji: '👑', description: 'Legendary Buyer' },
-  'high-conviction buyer': { emoji: '🔥', description: 'High-Conviction Buyer' },
-  'potential alpha': { emoji: '🚀', description: 'Potential Alpha' },
-  'mid trader': { emoji: '📉', description: 'Mid Trader' },
-  'degen sprayer': { emoji: '🤡', description: 'Degen Sprayer' },
-  'one-hit wonder': { emoji: '💥', description: 'One-Hit Wonder' },
-  'diamond hands buyer': { emoji: '💎', description: 'Diamond Hands Buyer' },
-  'whale buyer': { emoji: '🐳', description: 'Whale Buyer' },
-  'dead wallet': { emoji: '⚰️', description: 'Dead Wallet' },
-  'comeback trader': { emoji: '🔄', description: 'Comeback Trader' },
-  'volume factor': { emoji: '📊', description: 'Volume Factor' },
+const badgeEmojis = {
+  'legendary buyer': '🏆',
+  'high-conviction buyer': '💼',
+  'potential alpha': '🚀',
+  'mid trader': '📈',
+  'degen sprayer': '🤪',
+  'one-hit wonder': '🎯',
+  'diamond hands buyer': '💎',
+  'whale buyer': '🐋',
+  'dead wallet': '⚰️',
+  'comeback trader': '🔥'
 };
 
-function WalletCard({ wallet, rank }) {
-  const [showWalletChart, setShowWalletChart] = React.useState(false);
-  const fullAddress = wallet.address;
-  const confidence = parseFloat(wallet.confidence_score);
+const WalletCard = ({ wallet, computePnl }) => {
+  const [showRunners, setShowRunners] = useState(false);
 
-  // Filter duplicate runners by address
-  const uniqueRunners = wallet.runners
-    ? Array.from(new Map(wallet.runners.map(runner => [runner.address, runner])).values()
-    )
-    : [];
+  // Compute total PnL across all runners
+  const totalPnl = wallet.runners.reduce((acc, runner) => acc + computePnl(runner), 0);
+  const pnlStyle = { color: totalPnl < 0 ? 'red' : '#00e676', fontWeight: 'bold' };
+  const confidenceStyle = { color: Number(wallet.confidence_score) <= 20 ? 'red' : '#ffffff', fontWeight: 'bold' };
 
-  let avgRunnerScore = 0;
-  if (uniqueRunners.length > 0) {
-    avgRunnerScore =
-      uniqueRunners.reduce((sum, runner) => sum + runner.score, 0) / uniqueRunners.length;
-    avgRunnerScore = parseFloat(avgRunnerScore.toFixed(2));
-  }
-
-  const walletChartData = [
-    { name: 'Confidence', value: confidence },
-    { name: 'Avg Runner', value: avgRunnerScore },
-  ];
-
-  const copyAddress = () => {
-    navigator.clipboard.writeText(fullAddress);
+  const handleCopyAddress = (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(wallet.address);
+    alert("Wallet address copied to clipboard!");
   };
 
   return (
-    <MotionPaper
-      variant="outlined"
+    <Card
       sx={{
-        borderRadius: '8px',
-        border: '2px solid #00bfa5',
-        p: 2,
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#ffffff',
-        mb: 2,
-        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+        marginBottom: 2,
+        backgroundColor: '#272727',
+        padding: 2,
+        borderRadius: 2,
+        border: '1px solid #00e676',
+        boxShadow: '0px 0px 10px rgba(0,230,118,0.5)',
+        cursor: 'pointer'
       }}
-      whileHover={{ scale: 1.02 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      onClick={handleCopyAddress}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-        <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#00bfa5', mr: 2 }}>
-          {rank}.
-        </Typography>
-        <Box sx={{ mr: 2 }}>
-          <Typography variant="caption" sx={{ color: '#555' }}>
-            Wallet Address:
+      <CardContent>
+        <Box sx={{ mb: 1 }}>
+          <Typography variant="h6" sx={{ color: '#00e676', fontWeight: 'bold', wordBreak: 'break-all' }}>
+            {wallet.address}
           </Typography>
-          <Tooltip title="Click to copy address">
-            <Typography
-              variant="body1"
-              onClick={copyAddress}
-              sx={{ cursor: 'pointer', wordBreak: 'break-all' }}
-            >
-              {fullAddress}
-            </Typography>
-          </Tooltip>
-        </Box>
-        <Box sx={{ ml: 'auto', textAlign: 'right' }}>
-          <Typography variant="caption" sx={{ color: '#555' }}>
-            Confidence Score:
+          <Divider sx={{ my: 1, backgroundColor: '#00e676' }} />
+          <Typography variant="body2" sx={{ color: '#ffffff' }}>
+            Confidence: <span style={confidenceStyle}>{Number(wallet.confidence_score).toFixed(2)}</span>
           </Typography>
-          <Typography variant="body2">{confidence}%</Typography>
+          <Typography variant="body2" sx={{ color: '#ffffff' }}>
+            Total PnL: <span style={pnlStyle}>{totalPnl.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>
+          </Typography>
+          <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {wallet.badges.map((badge, idx) => {
+              const emoji = badgeEmojis[badge.toLowerCase()] || "";
+              return (
+                <Chip
+                  key={idx}
+                  label={`${emoji} ${badge}`}
+                  sx={{
+                    backgroundColor: '#00e676',
+                    color: '#121212',
+                    fontWeight: 'bold',
+                    fontSize: '0.8rem'
+                  }}
+                />
+              );
+            })}
+          </Box>
         </Box>
-      </Box>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-        {wallet.badges.map((badge, idx) => {
-          const key = badge.toLowerCase();
-          const info = badgeMapping[key] || { emoji: badge, description: badge };
-          return (
-            <Chip
-              key={idx}
-              label={`${info.emoji} ${info.description}`}
-              size="small"
-              sx={{ background: 'rgba(0,191,165,0.1)', color: '#00bfa5' }}
-            />
-          );
-        })}
-        <IconButton size="small" onClick={() => setShowWalletChart(prev => !prev)}>
-          <BarChartIcon sx={{ color: '#00bfa5' }} />
-        </IconButton>
-      </Box>
-      {showWalletChart && (
-        <Box sx={{ width: '100%', height: 60, mb: 1 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={walletChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
-              <XAxis dataKey="name" tick={{ fill: '#333', fontSize: 10 }} />
-              <YAxis tick={{ fill: '#333', fontSize: 10 }} />
-              <RechartsTooltip
-                contentStyle={{
-                  backgroundColor: '#eee',
-                  border: 'none',
-                  borderRadius: '5px',
-                  color: '#333',
-                }}
-              />
-              <Bar dataKey="value" fill="#00bfa5" />
-            </BarChart>
-          </ResponsiveContainer>
-        </Box>
-      )}
-      {uniqueRunners.length > 0 && (
-        <Accordion sx={{ background: '#f9f9f9' }}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#ff5252' }} />}>
-            <Typography sx={{ color: '#333' }}>View Runners</Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            {uniqueRunners.map((runner, idx) => (
-              <RunnerCard key={idx} runner={runner} />
+        <Button
+          variant="outlined"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowRunners((prev) => !prev);
+          }}
+          sx={{ mt: 1, color: '#00e676', borderColor: '#00e676' }}
+        >
+          {showRunners ? 'Hide Runners' : 'See Runners'}
+        </Button>
+        {showRunners && (
+          <Box sx={{ mt: 2, borderTop: '1px solid #00e676', pt: 2 }}>
+            {wallet.runners.map((runner, index) => (
+              <RunnerAccordion key={index} runner={runner} computePnl={computePnl} />
             ))}
-          </AccordionDetails>
-        </Accordion>
-      )}
-    </MotionPaper>
+          </Box>
+        )}
+      </CardContent>
+    </Card>
   );
-}
+};
 
 export default WalletCard;

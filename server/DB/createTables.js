@@ -38,6 +38,13 @@ CREATE TABLE IF NOT EXISTS filtered (
     id SERIAL PRIMARY KEY,
     address TEXT NOT NULL UNIQUE
 );
+
+ -- Create whitelist table
+ CREATE TABLE IF NOT EXISTS whitelist (
+      id SERIAL PRIMARY KEY,
+      name TEXT,
+      wallet_address TEXT NOT NULL UNIQUE
+  );
 `;
 
 async function setUpDb(){
