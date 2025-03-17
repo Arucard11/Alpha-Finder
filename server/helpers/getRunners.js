@@ -10,11 +10,9 @@ async function getRunners(){
     
     
     try{
-        const oldRunners = await getAllRunners()
         const newCoins = await getNewCoins()
-        const filtered = await getAllFiltered()
-        const valid = getUniqueFromFirst(newCoins,filtered)
-        const newRunners = getUniqueFromFirst(valid,oldRunners)
+        const oldRunners = await getAllRunners()
+        const newRunners = getUniqueFromFirst(newCoins,oldRunners)
 
         for(let coin of newRunners){
 
@@ -28,7 +26,7 @@ async function getRunners(){
                 await addRunner(coin)
                 
             }else{
-                await addFiltered(coin)
+                // await addFiltered(coin)
             }
         }
 

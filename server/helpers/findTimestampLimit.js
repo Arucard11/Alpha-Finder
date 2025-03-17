@@ -34,9 +34,9 @@ async function findTimestampLimit(tokenSupply, prices, athprice) {
 
   // If the early timestamp is among the oldest 11 entries,
   // assume the threshold is too low and adjust upward.
-  if (prices.slice(0, 5).some(price => price.unixTime === early)) {
-    earlyCapThreshold = 0.20 * athMarketCap;
-    lateCapThreshold  = 0.60 * 1.3 * athMarketCap;  // 40% and roughly 52%
+  if (prices.slice(0, 11).some(price => price.unixTime === early)) {
+    earlyCapThreshold = 0.50 * athMarketCap;
+    lateCapThreshold  = 0.70 * 1.3 * athMarketCap;  
     earlyEntry = prices.find(price => (price.value * tokenSupply) >= earlyCapThreshold);
     lateEntry  = prices.find(price => (price.value * tokenSupply) >= lateCapThreshold);
     early = earlyEntry ? earlyEntry.unixTime : early;

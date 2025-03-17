@@ -8,7 +8,7 @@ const {updateRunner} = require("../DB/querys.js")
 async function updateData(){
    
     try{
-        await setUpDb()
+        // await setUpDb()
         let runners = await getRunners()
         
         if(runners.length === 0){

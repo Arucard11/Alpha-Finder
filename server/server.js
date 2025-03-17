@@ -2,10 +2,14 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 
 const express = require('express');
 const cors = require('cors');
+const cron = require('node-cron');
 const leaderboardRoutes = require('./routes/leaderboard.js');
 const authRoutes = require("./routes/auth.js")
 const coins = require("./controllers/coinsController.js")
+const updateData = require("./helpers/updateData.js")
+
 const app = express();
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
@@ -17,7 +21,9 @@ app.get('/coins',coins.getCoins)
 const PORT = process.env.PORT || 5000;
 
 
-  
+cron.schedule('0 0 * * *', () => {
+  updateData()
+  }); 
 
 app.listen(PORT, () => {
     console.log(`Express server running on port ${PORT}`);
