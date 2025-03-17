@@ -276,18 +276,18 @@ async function getAllFiltered() {
  * @returns {Promise<Object>} The inserted runner record.
  */
 async function addRunner(data) { 
-    const { address, name, timestamps, athprice,symbol,logoURI } = data;
+    const { address, name, timestamps, athprice,symbol,logoURI,athmc, created_at} = data;
     const sanitizedAddress = sanitizeString(address);
     const sanitizedName = sanitizeString(name);
     const timestamp = JSON.stringify(timestamps)
     
     const query = `
-      INSERT INTO runners (address, name, timestamps, athprice, symbol, logouri)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO runners (address, name, timestamps, athprice, symbol,logouri, athmc, created)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *;
     `;
     try {
-      const result = await pool.query(query, [sanitizedAddress, sanitizedName,timestamp,athprice,symbol,logoURI]);
+      const result = await pool.query(query, [sanitizedAddress, sanitizedName,timestamp,athprice,symbol,logoURI,athmc, created_at]);
       return result.rows[0];
     } catch (err) {
       console.error('Error inserting runner:', err);

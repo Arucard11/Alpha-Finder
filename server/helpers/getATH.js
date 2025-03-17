@@ -41,7 +41,7 @@ async function fetchAth(address){
             const {supply,decimals} = await getAccountInfo(address)
             const tokenSupply = Number(supply) / Math.pow(10,decimals);
             const athMarketCap = Number((tokenSupply * athprice).toFixed(0))
-            let timestamps = await findTimestampLimit(tokenSupply,priceInfo.data.items.sort((a, b) => new Date(a.unixTime) - new Date(b.unixTime)),athprice)
+            let timestamps = await findTimestampLimit(tokenSupply,priceInfo.data.items.sort((a, b) => a.unixTime - b.unixTime),athprice)
             timestamps.allprices = priceInfo.data.items
             return {athMarketCap,athprice,timestamps}             
         }else{

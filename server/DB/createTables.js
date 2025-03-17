@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS runners (
     symbol TEXT NOT NULL,
     timestamps JSONB NOT NULL,
     athprice NUMERIC NOT NULL,
+    athmc NUMERIC,
+    created TIMESTAMPTZ,
     checked BOOLEAN NOT NULL DEFAULT FALSE 
 );
 

@@ -4,15 +4,12 @@ const { PublicKey } = require('@solana/web3.js');
 
 /**
  * Helper to find the closest price in `allprices` given a target timestamp.
- * This ensures we can handle cases where there is no exact match for runner.timestamps.early/late.
+ * (Retained for backward compatibility if needed.)
  */
 function getClosestPrice(allprices, targetUnixTime) {
   if (!Array.isArray(allprices) || allprices.length === 0) return null;
-
-  // Find the entry with the minimal absolute difference from targetUnixTime
   let closest = allprices[0];
   let minDiff = Math.abs(closest.unixTime - targetUnixTime);
-
   for (let i = 1; i < allprices.length; i++) {
     const diff = Math.abs(allprices[i].unixTime - targetUnixTime);
     if (diff < minDiff) {
@@ -23,7 +20,9 @@ function getClosestPrice(allprices, targetUnixTime) {
   return closest.value || null;
 }
 
-// Wallet helper: checks if the wallet is inactive (dead) for over 30 days.
+/**
+ * Wallet helper: checks if the wallet is inactive (dead) for over 30 days.
+ */
 async function checkIfDeadWallet(address) {
   const latestSig = (await connection.getSignaturesForAddress(new PublicKey(address), { limit: 100 }))[0];
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -31,7 +30,9 @@ async function checkIfDeadWallet(address) {
   return (latestSig && latestSig.blockTime < thirtyDaysAgo);
 }
 
-// Wallet helper: checks if the wallet qualifies as a comeback trader (inactive 60+ days, then returns).
+/**
+ * Wallet helper: checks if the wallet qualifies as a comeback trader (inactive 60+ days, then returns).
+ */
 async function checkIfComebackTrader(address) {
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const thirtyDaysAgo = Date.now() - THIRTY_DAYS_MS;
@@ -42,21 +43,31 @@ async function checkIfComebackTrader(address) {
       total++;
     }
   }
-  // For example, if total >= 50 means "came back after 60+ days"? 
-  // Adjust to your actual logic as needed. 
   return total >= 50;
 }
 
 /**
- * Returns how many runners are held past the 'late' threshold in the new data structure
- * for awarding the 'diamond hands' badge, etc.
+ * Returns the unixTime of the first price entry from runner.timestamps.allprices.
+ */
+function getStartTime(runner) {
+  if (runner.timestamps && Array.isArray(runner.timestamps.allprices) && runner.timestamps.allprices.length > 0) {
+    return runner.timestamps.allprices[0].unixTime;
+  }
+  return null;
+}
+
+/**
+ * Returns how many runners are held past the 'late' threshold.
+ * A runner is considered held past if there is at least one sell transaction after runner.timestamps.late.
  */
 function totalRunnersHeldPastLate(runners) {
   let total = 0;
   for (const runner of runners) {
-    // If there's a sell after `runner.timestamps.late`, consider it "held past late"
-    // (You can interpret "held" however you prefer, e.g. never sold by that time.)
-    if (runner.transactions.sell.some(s => s.timestamp > runner.timestamps.late)) {
+    if (
+      runner.timestamps &&
+      runner.timestamps.late &&
+      runner.transactions.sell.some(s => s.timestamp > runner.timestamps.late)
+    ) {
       total++;
     }
   }
@@ -64,48 +75,47 @@ function totalRunnersHeldPastLate(runners) {
 }
 
 /**
- * Main scoring function that uses the new data structure.
- * - runner.timestamps.early: Buy threshold time
- * - runner.timestamps.late: Holding threshold time
- * - runner.timestamps.allprices: array of { value, address, unixTime }
- * - runner.timestamps.twoMillion / fiveMillion if you want them for reference
+ * Main scoring function using timestamp‐based calculations.
+ * Uses:
+ *   - runner.timestamps.early: Buy threshold time (buys before this are “early”)
+ *   - runner.timestamps.late: Holding threshold time (sells after this are “held”)
+ *   - runner.timestamps.twoMillion / fiveMillion: times the runner hit those market caps
+ * Missing timestamps are handled gracefully.
  */
 async function scoreWallets(convertedWallets) {
-  // We do not merge with getAllWallets() to match your snippet exactly
   const allRunners = await getAllRunners();
   let badged = [];
 
   // =====================
-  //   BADGE ASSIGNMENT
+  //   BADGE ASSIGNMENT (unchanged)
   // =====================
   for (const wallet of convertedWallets) {
     const runnerCount = wallet.runners.length;
-    const globalRunnerCount = allRunners.length; // used for percentage-based badges
-
+    const globalRunnerCount = allRunners.length;
+    
     // 1) Legendary Buyer
     if (runnerCount >= 10) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
       wallet.badges.push('legendary buyer');
     }
     // 2) Potential Alpha
-    else if ((runnerCount / globalRunnerCount) * 100 >= 4) {
+    else if ((runnerCount / globalRunnerCount) * 100 >= 5 && (runnerCount / globalRunnerCount) * 100 <= 9) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
       wallet.badges.push('potential alpha');
     }
     // 3) High Conviction
     else if (
       wallet.runners.some(runner =>
-        runner.transactions.sell.some(sell => sell.timestamp > runner.timestamps.late)
+        runner.transactions.sell.some(sell =>
+          runner.timestamps && runner.timestamps.twoMillion && sell.timestamp > runner.timestamps.twoMillion
+        )
       )
     ) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
       wallet.badges.push('high conviction');
     }
     // 4) Mid Trader
-    else if (
-      (runnerCount / globalRunnerCount) * 100 <= 20 &&
-      (runnerCount / globalRunnerCount) * 100 >= 10
-    ) {
+    else if ((runnerCount / globalRunnerCount) * 100 <= 4 && (runnerCount / globalRunnerCount) * 100 >= 2) {
       wallet.badges.push('mid trader');
     }
     // 5) Degen Sprayer
@@ -125,10 +135,9 @@ async function scoreWallets(convertedWallets) {
     // 8) Whale Buyer
     else if (
       wallet.runners.some(runner =>
-        runner.transactions.buy.some(b => b.amount * b.price >= 5000)
-      ) ||  wallet.runners.some(runner =>
-        runner.transactions.sell.some(b => b.amount * b.price >= 5000)
-      ) 
+        (runner.transactions.buy.some(b => b.amount * b.price >= 5000)) ||
+        (runner.transactions.sell.some(s => s.amount * s.price >= 5000))
+      )
     ) {
       wallet.badges.push('whale buyer');
     }
@@ -141,140 +150,146 @@ async function scoreWallets(convertedWallets) {
       wallet.badges = wallet.badges.filter(b => b !== 'dead wallet');
       wallet.badges.push('comeback trader');
     }
-
-    // Remove duplicates
     wallet.badges = [...new Set(wallet.badges)];
     badged.push(wallet);
   }
 
   // =========================
-  //  TOKEN-LEVEL SCORING
+  //  TOKEN-LEVEL SCORING (TIMESTAMP-BASED)
   // =========================
 
-  // Helper: get the buy threshold price from runner.timestamps.early
-  function getBuyThresholdPrice(runner) {
-    if (!runner.timestamps || !runner.timestamps.early) return null;
-    return getClosestPrice(runner.timestamps.allprices, runner.timestamps.early);
-  }
-
-  // Helper: get the holding threshold price from runner.timestamps.late
-  function getHoldingThresholdPrice(runner) {
-    if (!runner.timestamps || !runner.timestamps.late) return null;
-    return getClosestPrice(runner.timestamps.allprices, runner.timestamps.late);
-  }
-
-  // 1) Early Buy Points
+  // 1) Early Buy Points:
+  // For each buy before runner.timestamps.early, compute the fraction relative to the period from the start time to the early threshold.
+  // Award points: fraction ≥ 0.75 → 5, ≥ 0.50 → 4, ≥ 0.25 → 3, otherwise 2.
+  // Additionally, if exactly one buy exists and its total value is less than $5, subtract 1 point.
   function computeEarlyBuyPoints(runner) {
-    const buyThresholdPrice = getBuyThresholdPrice(runner);
-    if (!buyThresholdPrice) {
-      // Fallback: if no threshold price, just give a default
-      return 2;
-    }
+    if (!runner.timestamps || runner.timestamps.early == null) return 2;
+    const threshold = runner.timestamps.early;
+    const startTime = getStartTime(runner);
+    if (!startTime || threshold <= startTime) return 2;
     let bestPoints = 0;
-
     for (const buy of runner.transactions.buy) {
-      const ratio = buy.price / buyThresholdPrice;
-      let points = 2; // default
-      if (ratio <= 0.25) {
-        points = 5;
-      } else if (ratio <= 0.50) {
-        points = 4;
-      } else if (ratio <= 0.75) {
-        points = 3;
-      } else {
-        points = 2;
+      let points = 2;
+      if (buy.timestamp <= threshold) {
+        const fraction = (threshold - buy.timestamp) / (threshold - startTime);
+        if (fraction >= 0.75) {
+          points = 5;
+        } else if (fraction >= 0.50) {
+          points = 4;
+        } else if (fraction >= 0.25) {
+          points = 3;
+        } else {
+          points = 2;
+        }
       }
-      // Keep the best (highest) among all buys
-      if (points > bestPoints) {
-        bestPoints = points;
+      bestPoints = Math.max(bestPoints, points);
+    }
+    if (runner.transactions.buy.length === 1) {
+      const singleBuy = runner.transactions.buy[0];
+      if (singleBuy.amount * singleBuy.price < 5) { // Changed threshold from $50 to $5
+        bestPoints = Math.max(bestPoints - 1, 1);
       }
     }
-    return bestPoints > 0 ? bestPoints : 2; // ensure at least 2
+    return bestPoints > 0 ? bestPoints : 2;
   }
 
-  // 2) Holding Multiplier & Conviction Bonus
-  function computeHoldingAndConviction(runner) {
-    const holdingThresholdPrice = getHoldingThresholdPrice(runner);
-    let holdingMultiplier = 1.0;
-    let convictionBonus = 1.0;
+  // 2) Holding Multiplier:
+  // Determines the multiplier based on sell timestamps compared to thresholds:
+  //   - Sell at or after fiveMillion → 1.5
+  //   - Else if sell at or after twoMillion → 1.2
+  //   - Else if sell at or after late → 1.0
+  //   - Otherwise, 0.7.
+  function computeHoldingMultiplier(runner) {
+    const tLate = runner.timestamps?.late;
+    const tTwoMillion = runner.timestamps?.twoMillion;
+    const tFiveMillion = runner.timestamps?.fiveMillion;
+    let multiplier = 1.0;
+    if (runner.transactions.sell && runner.transactions.sell.length > 0) {
+      for (const sell of runner.transactions.sell) {
+        if (tFiveMillion && sell.timestamp >= tFiveMillion) {
+          multiplier = Math.max(multiplier, 1.5);
+        } else if (tTwoMillion && sell.timestamp >= tTwoMillion) {
+          multiplier = Math.max(multiplier, 1.2);
+        } else if (tLate && sell.timestamp >= tLate) {
+          multiplier = Math.max(multiplier, 1.0);
+        } else {
+          multiplier = Math.max(multiplier, 0.7);
+        }
+      }
+    } else {
+      multiplier = 1.0;
+    }
+    return multiplier;
+  }
 
-    // If never sold
+  // 3) Conviction Bonus:
+  // For never-sold runners:
+  //   - Normally, if latest buy is within 90 days, bonus = 1.5; otherwise, bonus = 1.2.
+  //   - However, if the highest buy value is less than $5, bonus is reduced to 1.0.
+  // For sold runners, choose the best bonus:
+  //   - Sell at or after twoMillion → 1.2, at or after late → 1.0, else 0.8.
+  function computeConvictionBonus(runner) {
+    const tLate = runner.timestamps?.late;
+    const tTwoMillion = runner.timestamps?.twoMillion;
+    let bonus = 1.0;
     if (!runner.transactions.sell || runner.transactions.sell.length === 0) {
-      // Check for recent buy activity
-      const latestBuyTimestamp = Math.max(...runner.transactions.buy.map(b => b.timestamp));
+      const latestBuy = Math.max(...runner.transactions.buy.map(b => b.timestamp));
       const nowSec = Math.floor(Date.now() / 1000);
-      // Conviction Bonus
-      if (nowSec - latestBuyTimestamp <= 90 * 24 * 60 * 60) {
-        convictionBonus = 1.5;
+      // Check highest buy value among all buys
+      const maxBuyValue = Math.max(...runner.transactions.buy.map(b => b.amount * b.price));
+      if (maxBuyValue < 5) { // Changed threshold from $50 to $5
+        bonus = 1.0;
       } else {
-        convictionBonus = 1.2;
+        bonus = (nowSec - latestBuy <= 90 * 24 * 60 * 60) ? 1.5 : 1.2;
       }
-      // Holding Multiplier stays at 1.0
-      return { holdingMultiplier, convictionBonus };
-    }
-
-    // If sold, find the best (highest) sell price
-    let bestSellPrice = 0;
-    for (const sell of runner.transactions.sell) {
-      if (sell.price > bestSellPrice) {
-        bestSellPrice = sell.price;
-      }
-    }
-
-    // Holding Multiplier
-    if (holdingThresholdPrice) {
-      if (bestSellPrice >= 5 * holdingThresholdPrice) {
-        holdingMultiplier = 1.5;
-      } else if (bestSellPrice >= 2 * holdingThresholdPrice) {
-        holdingMultiplier = 1.2;
-      } else if (bestSellPrice >= holdingThresholdPrice) {
-        holdingMultiplier = 1.0;
-      } else {
-        holdingMultiplier = 0.7;
-      }
-    }
-
-    // Conviction Bonus
-    if (!holdingThresholdPrice) {
-      // fallback
-      convictionBonus = 1.0;
     } else {
-      if (bestSellPrice >= 2 * holdingThresholdPrice) {
-        convictionBonus = 1.2;
-      } else if (bestSellPrice >= holdingThresholdPrice) {
-        convictionBonus = 1.0;
-      } else {
-        convictionBonus = 0.8;
+      for (const sell of runner.transactions.sell) {
+        let candidate = 0.8;
+        if (tTwoMillion && sell.timestamp >= tTwoMillion) {
+          candidate = 1.2;
+        } else if (tLate && sell.timestamp >= tLate) {
+          candidate = 1.0;
+        } else {
+          candidate = 0.8;
+        }
+        bonus = Math.max(bonus, candidate);
       }
     }
-
-    return { holdingMultiplier, convictionBonus };
+    return bonus;
   }
 
-  // 3) Early Exit Penalty
+  // 4) Early Exit Penalty:
+  // For each sell occurring before runner.timestamps.late, compute:
+  // fraction = (runner.timestamps.late - sell.timestamp) / (runner.timestamps.late - runner.timestamps.early)
+  // Then assign:
+  //   fraction > 0.75 → 40% penalty,
+  //   fraction > 0.50 → 30% penalty,
+  //   else 0%.
+  // Return the minimal (i.e. best) penalty among sells.
   function computeEarlyExitPenalty(runner) {
-    // If no sells, no penalty
-    if (!runner.transactions.sell || runner.transactions.sell.length === 0) {
+    const tEarly = runner.timestamps?.early;
+    const tLate = runner.timestamps?.late;
+    if (!runner.transactions.sell || runner.transactions.sell.length === 0 || tEarly == null || tLate == null || tLate <= tEarly) {
       return 0;
     }
-    // Compare bestSellPrice to holdingThresholdPrice
-    const holdingThresholdPrice = getHoldingThresholdPrice(runner);
-    if (!holdingThresholdPrice) {
-      return 0; // fallback if we can't get threshold price
-    }
-    let bestSellPrice = 0;
+    let minPenalty = 1; // start high so we can reduce it
     for (const sell of runner.transactions.sell) {
-      if (sell.price > bestSellPrice) {
-        bestSellPrice = sell.price;
+      let penalty = 0;
+      if (sell.timestamp < tLate) {
+        const fraction = (tLate - sell.timestamp) / (tLate - tEarly);
+        if (fraction > 0.75) {
+          penalty = 0.40;
+        } else if (fraction > 0.50) {
+          penalty = 0.30;
+        } else {
+          penalty = 0;
+        }
+      } else {
+        penalty = 0;
       }
+      minPenalty = Math.min(minPenalty, penalty);
     }
-    if (bestSellPrice < 0.25 * holdingThresholdPrice) {
-      return 0.40; // 40% penalty
-    } else if (bestSellPrice < 0.50 * holdingThresholdPrice) {
-      return 0.30; // 30% penalty
-    } else {
-      return 0;
-    }
+    return minPenalty;
   }
 
   // =========================
@@ -283,65 +298,43 @@ async function scoreWallets(convertedWallets) {
   for (const wallet of badged) {
     for (const runner of wallet.runners) {
       if (runner.scored) continue;
-
       const earlyBuyPoints = computeEarlyBuyPoints(runner);
-      const { holdingMultiplier, convictionBonus } = computeHoldingAndConviction(runner);
+      const holdingMultiplier = computeHoldingMultiplier(runner);
+      const convictionBonus = computeConvictionBonus(runner);
       const earlyExitPenalty = computeEarlyExitPenalty(runner);
-
-      // Token Score = (EarlyBuyPoints × HoldingMultiplier × ConvictionBonus) × (1 - earlyExitPenalty)
+      // Token Score = (EarlyBuyPoints × HoldingMultiplier × ConvictionBonus) × (1 - EarlyExitPenalty)
       const tokenScore = (earlyBuyPoints * holdingMultiplier * convictionBonus) * (1 - earlyExitPenalty);
       runner.score = tokenScore;
       runner.scored = true;
     }
-
-    // Sum up all token scores
     const sumTokenScores = wallet.runners.reduce((acc, r) => acc + (isNaN(r.score) ? 0 : r.score), 0);
 
     // =========================
     //  WALLET-LEVEL SCORING
     // =========================
 
-    // 1) Success Rate
-    // # of tokens "bought below buy threshold" AND "held past holding threshold"
-    //   / total tokens "bought below buy threshold"
+    // Success Rate:
+    // For each runner, if any buy occurred before runner.timestamps.early, count it;
+    // and if the runner was "held" (either never sold and current time > late, or any sell after late) count it as success.
     let boughtBelowCount = 0;
     let successCount = 0;
-
     for (const runner of wallet.runners) {
-      const buyThresholdPrice = getBuyThresholdPrice(runner);
-      if (!buyThresholdPrice) {
-        // If no threshold price, skip
-        continue;
-      }
-      // Check if ANY buy was below buyThresholdPrice
-      const anyBuyBelow = runner.transactions.buy.some(b => b.price < buyThresholdPrice);
-      if (!anyBuyBelow) {
-        continue; // doesn't count toward "bought below" tokens
-      }
+      if (!runner.timestamps || runner.timestamps.early == null || runner.timestamps.late == null) continue;
+      const anyBuyEarly = runner.transactions.buy.some(b => b.timestamp <= runner.timestamps.early);
+      if (!anyBuyEarly) continue;
       boughtBelowCount++;
-
-      // Check if "held past" => either no sells or sells after runner.timestamps.late
       let heldPast = false;
       if (!runner.transactions.sell || runner.transactions.sell.length === 0) {
-        // never sold => if current time is past the runner.timestamps.late => consider held
         const nowSec = Math.floor(Date.now() / 1000);
-        if (nowSec > runner.timestamps.late) {
-          heldPast = true;
-        }
+        if (nowSec > runner.timestamps.late) heldPast = true;
       } else {
-        // if any sell is after runner.timestamps.late
         if (runner.transactions.sell.some(s => s.timestamp > runner.timestamps.late)) {
           heldPast = true;
         }
       }
-      if (heldPast) {
-        successCount++;
-      }
+      if (heldPast) successCount++;
     }
-
     const successRate = boughtBelowCount > 0 ? (successCount / boughtBelowCount) * 100 : 0;
-
-    // 2) Wallet-Specific Success Rate Multiplier
     let walletMultiplier = 1.0;
     if (successRate >= 50) {
       walletMultiplier = 1.5;
@@ -353,17 +346,14 @@ async function scoreWallets(convertedWallets) {
       walletMultiplier = 0.5;
     }
 
-    // 3) Decay Factor after 30 days inactivity (2% weekly)
+    // Determine the wallet's last activity (max timestamp among all buys and sells)
     let lastActivity = 0;
     for (const runner of wallet.runners) {
       const buyTimes = runner.transactions.buy.map(b => b.timestamp);
       const sellTimes = runner.transactions.sell.map(s => s.timestamp);
       const maxTime = Math.max(...buyTimes.concat(sellTimes));
-      if (maxTime > lastActivity) {
-        lastActivity = maxTime;
-      }
+      if (maxTime > lastActivity) lastActivity = maxTime;
     }
-
     const nowSec = Math.floor(Date.now() / 1000);
     const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60;
     let decay = 0;
@@ -372,8 +362,6 @@ async function scoreWallets(convertedWallets) {
       const weeksInactive = Math.floor(inactiveTime / (7 * 24 * 60 * 60));
       decay = sumTokenScores * (weeksInactive * 0.02);
     }
-
-    // 4) Final Wallet Confidence Score
     wallet.confidence_score = (sumTokenScores * walletMultiplier) - decay;
   }
 

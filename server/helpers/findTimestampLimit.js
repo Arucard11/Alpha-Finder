@@ -21,8 +21,8 @@ async function findTimestampLimit(tokenSupply, prices, athprice) {
   // Define threshold percentages relative to ATH market cap.
   // We now want the early timestamp to be when market cap reaches about 30% of ATH cap,
   // and the late timestamp to be when it reaches 30% * 1.3 (~39%) of ATH cap.
-  let earlyCapThreshold = 0.20 * athMarketCap;
-  let lateCapThreshold = 0.60 * 1.3 * athMarketCap;
+  let earlyCapThreshold = 0.10 * athMarketCap;
+  let lateCapThreshold = 0.50* 1.3 * athMarketCap;
 
   // Because the array is sorted oldest first, find the first price that meets the thresholds.
   let earlyEntry = prices.find(price => (price.value * tokenSupply) >= earlyCapThreshold);
@@ -34,9 +34,9 @@ async function findTimestampLimit(tokenSupply, prices, athprice) {
 
   // If the early timestamp is among the oldest 11 entries,
   // assume the threshold is too low and adjust upward.
-  if (prices.slice(0, 11).some(price => price.unixTime === early)) {
-    earlyCapThreshold = 0.40 * athMarketCap;
-    lateCapThreshold  = 0.70 * 1.3 * athMarketCap;  // 40% and roughly 52%
+  if (prices.slice(0, 5).some(price => price.unixTime === early)) {
+    earlyCapThreshold = 0.20 * athMarketCap;
+    lateCapThreshold  = 0.60 * 1.3 * athMarketCap;  // 40% and roughly 52%
     earlyEntry = prices.find(price => (price.value * tokenSupply) >= earlyCapThreshold);
     lateEntry  = prices.find(price => (price.value * tokenSupply) >= lateCapThreshold);
     early = earlyEntry ? earlyEntry.unixTime : early;
@@ -50,6 +50,7 @@ async function findTimestampLimit(tokenSupply, prices, athprice) {
   const twoMillion = twoMillionEntry ? twoMillionEntry.unixTime : null;
   const fiveMillion = fiveMillionEntry ? fiveMillionEntry.unixTime : null;
 
+ 
   return { early, late, twoMillion, fiveMillion };
 }
 

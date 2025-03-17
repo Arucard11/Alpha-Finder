@@ -5,7 +5,7 @@ import InfiniteScrollLeaderboard from './InfiniteScrollLeaderboard';
 
 const LeaderboardContainer = () => {
   const [timeframe, setTimeframe] = useState('all-time');
-  const [filter, setFilter] = useState('confidence'); // default filter
+  const [filter, setFilter] = useState('confidence'); // or 'pnl', 'runners'
 
   const handleTabChange = (event, newValue) => {
     setTimeframe(newValue);
@@ -16,7 +16,7 @@ const LeaderboardContainer = () => {
   };
 
   return (
-    <Box sx={{ mt: 2, mx: 'auto', maxWidth: 800 }}>
+    <Box sx={{ mt: 4, mx: 'auto', maxWidth: 800 }}>
       <Tabs value={timeframe} onChange={handleTabChange} centered textColor="primary" indicatorColor="primary">
         <Tab label="All-Time" value="all-time" />
         <Tab label="90-Day" value="90-day" />
@@ -38,7 +38,8 @@ const LeaderboardContainer = () => {
           </Select>
         </FormControl>
       </Box>
-      <InfiniteScrollLeaderboard type={timeframe} filter={filter} />
+      {/* Pass a key based on timeframe and filter */}
+      <InfiniteScrollLeaderboard key={`${timeframe}-${filter}`} type={timeframe} filter={filter} />
     </Box>
   );
 };

@@ -24,7 +24,7 @@ const RunnerAccordion = ({ runner, computePnl }) => {
               {runner.name} ({runner.symbol})
             </Typography>
             <Typography variant="body2">
-              Score: {runner.score} | PnL: {pnl}
+              Score: {runner.score.toFixed(2)} | PnL: {pnl}
             </Typography>
           </Box>
         </Box>

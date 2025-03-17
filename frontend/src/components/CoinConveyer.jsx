@@ -1,48 +1,41 @@
 // src/components/CoinConveyer.jsx
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Card, CardMedia } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { motion } from 'framer-motion';
+import CoinCard from './CoinCard';
 
 const CoinConveyer = () => {
   const [coins, setCoins] = useState([]);
 
   useEffect(() => {
-    // Replace with your actual coin endpoint
     fetch('http://localhost:5000/coins')
       .then((response) => response.json())
-      .then((data) => {
-        setCoins(data);
-      })
-      .catch((err) => {
-        console.error('Error fetching coins:', err);
-      });
+      .then((data) => setCoins(data))
+      .catch((err) => console.error('Error fetching coins:', err));
   }, []);
+
+  // Duplicate the coin list for a seamless loop
+  const coinList = coins.concat(coins);
 
   return (
     <Box
       sx={{
-        overflow: 'hidden',
-        whiteSpace: 'nowrap',
+        backgroundColor: '#1d1d1d',
+        padding: '10px 0',
         position: 'relative',
-        background: '#1d1d1d',
-        padding: '10px 0'
+        overflow: 'hidden',
       }}
     >
+      <Typography variant="h6" sx={{ color: '#00e676', textAlign: 'center', mb: 1 }}>
+        Runners– Past Month
+      </Typography>
       <motion.div
-        animate={{ x: [-100, 0] }} // Adjust animation as needed
-        transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
+        style={{ display: 'flex', whiteSpace: 'nowrap' }}
+        animate={{ x: ['0%', '-50%'] }}
+        transition={{ duration: 20, ease: 'linear', repeat: Infinity }}
       >
-        {coins.map((coin) => (
-          <Card key={coin.id} sx={{ display: 'inline-block', margin: '0 20px', cursor: 'pointer' }}>
-            <CardMedia
-              component="img"
-              image={coin.logouri}
-              alt={coin.name}
-              sx={{ width: 50, height: 50 }}
-            />
-            <Typography variant="subtitle2">{coin.symbol}</Typography>
-            <Typography variant="caption">ATH: {coin.athprice}</Typography>
-          </Card>
+        {coinList.map((coin, index) => (
+          <CoinCard key={index} coin={coin} />
         ))}
       </motion.div>
     </Box>

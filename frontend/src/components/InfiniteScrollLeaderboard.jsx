@@ -2,34 +2,46 @@
 import React, { useState, useEffect } from 'react';
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { Box, Typography } from '@mui/material';
-import WalletCard from './WalletCard';
+import WalletAccordion from './WalletAccordion';
 
-// Helper to compute a runner's PnL
+// Helper function to compute a runner's PnL
 const computePnl = (runner) => {
   const buys = runner.transactions.buy || [];
   const sells = runner.transactions.sell || [];
+  if (sells.length === 0) {
+    return 0;
+  }
   const totalBuy = buys.reduce((sum, tx) => sum + tx.price * tx.amount, 0);
   const totalSell = sells.reduce((sum, tx) => sum + tx.price * tx.amount, 0);
   return totalSell - totalBuy;
 };
+
 
 const InfiniteScrollLeaderboard = ({ type, filter }) => {
   const [wallets, setWallets] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  // Use a parameter to ensure we always use the correct offset
+  // Fetch wallets from the API (only once on mount)
   const fetchWallets = (currentOffset) => {
     let url = '';
     let body = {};
+
     if (type === 'all-time') {
       url = 'http://localhost:5000/leaderboard/all-time';
-      body = { offset: currentOffset, sort: filter };
+      body = { offset: currentOffset };
+      if (filter !== 'pnl') {
+        body.sort = filter;
+      }
     } else {
       url = 'http://localhost:5000/leaderboard/day';
       const days = type === '7-day' ? 7 : type === '30-day' ? 30 : 90;
-      body = { days, offset: currentOffset, sort: filter };
+      body = { days, offset: currentOffset };
+      if (filter !== 'pnl') {
+        body.sort = filter;
+      }
     }
+
     fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,7 +52,14 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
         if (data.length === 0) {
           setHasMore(false);
         } else {
-          setWallets((prev) => [...prev, ...data]);
+          setWallets((prev) => {
+            const combined = [...prev, ...data];
+            // Deduplicate wallets by id (or by address if needed)
+            const unique = combined.filter(
+              (w, idx, arr) => arr.findIndex((x) => x.id === w.id) === idx
+            );
+            return unique;
+          });
           setOffset(currentOffset + data.length);
         }
       })
@@ -49,29 +68,20 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       });
   };
 
-  // When day range (type) or filter changes, reset the leaderboard and fetch from the beginning
+  // Fetch data only once on mount
   useEffect(() => {
-    setWallets([]);
-    setOffset(0);
-    setHasMore(true);
     fetchWallets(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, filter]);
+  }, []);
 
-  // Sort wallets locally in descending order based on the filter
-  const sortedWallets = [...wallets].sort((a, b) => {
-    if (filter === 'pnl') {
+  // Inline sort: if filter is "pnl", sort the wallets locally by total PnL (descending)
+  let sortedWallets = wallets;
+  if (filter === 'pnl') {
+    sortedWallets = [...wallets].sort((a, b) => {
       const aPnl = a.runners.reduce((acc, runner) => acc + computePnl(runner), 0);
       const bPnl = b.runners.reduce((acc, runner) => acc + computePnl(runner), 0);
       return bPnl - aPnl;
-    } else if (filter === 'confidence') {
-      return Number(b.confidence_score) - Number(a.confidence_score);
-    } else if (filter === 'runners') {
-      return (b.runners?.length || 0) - (a.runners?.length || 0);
-    } else {
-      return 0;
-    }
-  });
+    });
+  }
 
   return (
     <Box
@@ -83,7 +93,6 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
         padding: 2,
         borderRadius: 1,
         mt: 2,
-        border: '2px solid #00e676',
         boxShadow: '0px 0px 15px rgba(0,230,118,0.7)',
         mx: 'auto',
         maxWidth: 800,
@@ -97,7 +106,7 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
         scrollableTarget="scrollableDiv"
       >
         {sortedWallets.map((wallet) => (
-          <WalletCard key={wallet.id} wallet={wallet} computePnl={computePnl} />
+          <WalletAccordion key={wallet.id} wallet={wallet} computePnl={computePnl} />
         ))}
       </InfiniteScroll>
     </Box>

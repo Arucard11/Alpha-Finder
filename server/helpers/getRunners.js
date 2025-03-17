@@ -11,8 +11,8 @@ async function getRunners(){
     
     try{
         const oldRunners = await getAllRunners()
-        const filtered = await getAllFiltered()
         const newCoins = await getNewCoins()
+        const filtered = await getAllFiltered()
         const valid = getUniqueFromFirst(newCoins,filtered)
         const newRunners = getUniqueFromFirst(valid,oldRunners)
 
@@ -23,6 +23,7 @@ async function getRunners(){
             if(athMarketCap >= 1000000){
                 coin.athprice = athprice
                 coin.timestamps = timestamps
+                coin.athmc = athMarketCap
                 
                 await addRunner(coin)
                 
