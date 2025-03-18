@@ -1,6 +1,16 @@
 {
   "name": "walletAnalyzer",
   "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "server"
+  ],
+  "pnpm": {
+    "public-hoist-pattern": [
+      "*"
+    ]
+  },
   "description": "",
   "main": "index.js",
   "scripts": {
