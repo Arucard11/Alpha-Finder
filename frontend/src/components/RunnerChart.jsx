@@ -9,29 +9,31 @@ import {
   LineElement,
   Tooltip,
   Legend,
+  ScatterController,
 } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import annotationPlugin from 'chartjs-plugin-annotation';
 
-Chart.register(TimeScale, LinearScale, PointElement, LineElement, Tooltip, Legend, annotationPlugin);
+// Register all controllers and plugins, including the scatter controller.
+Chart.register(TimeScale, LinearScale, PointElement, LineElement, Tooltip, Legend, annotationPlugin, ScatterController);
 
 const RunnerChart = ({ runner }) => {
   // Prepare main dataset from allprices
   const prices = runner.timestamps.allprices || [];
   const sortedPrices = prices.sort((a, b) => a.unixTime - b.unixTime);
-  const lineData = sortedPrices.map(p => ({
+  const lineData = sortedPrices.map((p) => ({
     x: new Date(p.unixTime * 1000),
-    y: p.value
+    y: p.value,
   }));
 
   // Prepare buy and sell transaction points
-  const buyPoints = (runner.transactions.buy || []).map(tx => ({
+  const buyPoints = (runner.transactions.buy || []).map((tx) => ({
     x: new Date(tx.timestamp * 1000),
-    y: tx.price
+    y: tx.price,
   }));
-  const sellPoints = (runner.transactions.sell || []).map(tx => ({
+  const sellPoints = (runner.transactions.sell || []).map((tx) => ({
     x: new Date(tx.timestamp * 1000),
-    y: tx.price
+    y: tx.price,
   }));
 
   // Setup annotations for twoMillion, fiveMillion, early, late
@@ -49,8 +51,8 @@ const RunnerChart = ({ runner }) => {
         enabled: true,
         position: 'start',
         backgroundColor: 'purple',
-        color: '#ffffff'
-      }
+        color: '#ffffff',
+      },
     };
     showLegend = true;
   }
@@ -66,8 +68,8 @@ const RunnerChart = ({ runner }) => {
         enabled: true,
         position: 'start',
         backgroundColor: 'orange',
-        color: '#ffffff'
-      }
+        color: '#ffffff',
+      },
     };
     showLegend = true;
   }
@@ -83,8 +85,8 @@ const RunnerChart = ({ runner }) => {
         enabled: true,
         position: 'start',
         backgroundColor: 'blue',
-        color: '#ffffff'
-      }
+        color: '#ffffff',
+      },
     };
     showLegend = true;
   }
@@ -100,8 +102,8 @@ const RunnerChart = ({ runner }) => {
         enabled: true,
         position: 'start',
         backgroundColor: 'red',
-        color: '#ffffff'
-      }
+        color: '#ffffff',
+      },
     };
     showLegend = true;
   }
@@ -133,8 +135,8 @@ const RunnerChart = ({ runner }) => {
         pointRadius: 5,
         type: 'scatter',
         showLine: false,
-      }
-    ]
+      },
+    ],
   };
 
   const options = {
@@ -144,21 +146,21 @@ const RunnerChart = ({ runner }) => {
       x: {
         type: 'time',
         time: { tooltipFormat: 'Pp' },
-        title: { display: true, text: 'Time' }
+        title: { display: true, text: 'Time' },
       },
       y: {
-        title: { display: true, text: 'Price' }
-      }
+        title: { display: true, text: 'Price' },
+      },
     },
     plugins: {
       legend: { display: true, position: 'top' },
       annotation: { annotations: annotations },
       tooltip: {
         callbacks: {
-          label: (context) => `${context.dataset.label}: ${context.parsed.y}`
-        }
-      }
-    }
+          label: (context) => `${context.dataset.label}: ${context.parsed.y}`,
+        },
+      },
+    },
   };
 
   return (
@@ -167,7 +169,14 @@ const RunnerChart = ({ runner }) => {
         <Line data={data} options={options} />
       </div>
       {showLegend && (
-        <div style={{ textAlign: 'center', marginTop: '4px', fontSize: '0.8rem', color: '#ffffff' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            marginTop: '4px',
+            fontSize: '0.8rem',
+            color: '#ffffff',
+          }}
+        >
           <span style={{ marginRight: '12px' }}>
             <span style={{ color: 'purple', fontWeight: 'bold' }}>■</span> 2M Timestamp
           </span>
@@ -178,26 +187,55 @@ const RunnerChart = ({ runner }) => {
             <span style={{ color: 'blue', fontWeight: 'bold' }}>■</span> Early Timestamp
           </span>
           <span>
-            <span style={{ color: 'red', fontWeight: 'bold' }}>■</span> Late Timestamp
+            <span style={{ color: 'red', fontWeight: 'bold' }}>■</span> Holding Threshold Timestamp
           </span>
         </div>
       )}
       {/* Transaction details */}
-      <div style={{ marginTop: '8px', backgroundColor: '#333', padding: '8px', borderRadius: '4px' }}>
+      <div
+        style={{
+          marginTop: '8px',
+          backgroundColor: '#333',
+          padding: '8px',
+          borderRadius: '4px',
+        }}
+      >
         <div style={{ marginBottom: '4px' }}>
           <strong style={{ color: '#ffffff' }}>Buy Transactions:</strong>
         </div>
         {runner.transactions.buy.map((tx, idx) => (
-          <div key={`buy-${idx}`} style={{ color: 'green', fontSize: '0.75rem', marginBottom: '2px' }}>
-            {new Date(tx.timestamp * 1000).toLocaleString()} - {(tx.price * tx.amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+          <div
+            key={`buy-${idx}`}
+            style={{
+              color: 'green',
+              fontSize: '0.75rem',
+              marginBottom: '2px',
+            }}
+          >
+            {new Date(tx.timestamp * 1000).toLocaleString()} -{' '}
+            {(tx.price * tx.amount).toLocaleString('en-US', {
+              style: 'currency',
+              currency: 'USD',
+            })}
           </div>
         ))}
         <div style={{ marginTop: '4px', marginBottom: '4px' }}>
           <strong style={{ color: '#ffffff' }}>Sell Transactions:</strong>
         </div>
         {runner.transactions.sell.map((tx, idx) => (
-          <div key={`sell-${idx}`} style={{ color: 'red', fontSize: '0.75rem', marginBottom: '2px' }}>
-            {new Date(tx.timestamp * 1000).toLocaleString()} - {(tx.price * tx.amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+          <div
+            key={`sell-${idx}`}
+            style={{
+              color: 'red',
+              fontSize: '0.75rem',
+              marginBottom: '2px',
+            }}
+          >
+            {new Date(tx.timestamp * 1000).toLocaleString()} -{' '}
+            {(tx.price * tx.amount).toLocaleString('en-US', {
+              style: 'currency',
+              currency: 'USD',
+            })}
           </div>
         ))}
       </div>

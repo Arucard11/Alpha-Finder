@@ -23,6 +23,8 @@ const Login = () => {
         });
         const data = await res.json();
         if (data.isWhitelisted) {
+          // Store admin rights in localStorage for persistent access
+          localStorage.setItem('isAdmin', data.isAdmin ? 'true' : 'false');
           navigate('/dashboard', { state: { isAdmin: data.isAdmin } });
         } else {
           alert('You are not whitelisted to access the dashboard.');

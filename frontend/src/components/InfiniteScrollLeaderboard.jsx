@@ -16,13 +16,13 @@ const computePnl = (runner) => {
   return totalSell - totalBuy;
 };
 
-
 const InfiniteScrollLeaderboard = ({ type, filter }) => {
   const [wallets, setWallets] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Fetch wallets from the API (only once on mount)
+  // Fetch wallets from the API
   const fetchWallets = (currentOffset) => {
     let url = '';
     let body = {};
@@ -47,14 +47,19 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Network response was not ok: ${response.statusText}`);
+        }
+        return response.json();
+      })
       .then((data) => {
         if (data.length === 0) {
           setHasMore(false);
         } else {
           setWallets((prev) => {
             const combined = [...prev, ...data];
-            // Deduplicate wallets by id (or by address if needed)
+            // Deduplicate wallets by id
             const unique = combined.filter(
               (w, idx, arr) => arr.findIndex((x) => x.id === w.id) === idx
             );
@@ -65,10 +70,12 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       })
       .catch((err) => {
         console.error('Error fetching leaderboard data:', err);
+        setError(err.message);
+        setHasMore(false);
       });
   };
 
-  // Fetch data only once on mount
+  // Fetch data once on mount
   useEffect(() => {
     fetchWallets(0);
   }, []);
@@ -98,6 +105,11 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
         maxWidth: 800,
       }}
     >
+      {error && (
+        <Typography sx={{ color: 'red', textAlign: 'center', mb: 1 }}>
+          {error}
+        </Typography>
+      )}
       <InfiniteScroll
         dataLength={wallets.length}
         next={() => fetchWallets(offset)}

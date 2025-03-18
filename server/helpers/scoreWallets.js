@@ -24,11 +24,35 @@ function getClosestPrice(allprices, targetUnixTime) {
  * Wallet helper: checks if the wallet is inactive (dead) for over 30 days.
  */
 async function checkIfDeadWallet(address) {
-  const latestSig = (await connection.getSignaturesForAddress(new PublicKey(address), { limit: 100 }))[0];
+  // Retrieve up to 100 signatures for the address.
+  const signatures = await connection.getSignaturesForAddress(
+    new PublicKey(address),
+    { limit: 100 }
+  );
+
+  // If no signatures are found, you might decide what to return.
+  if (!signatures.length) {
+    // For example, if no signatures, you might consider it not dead.
+    return false;
+  }
+  
+  // Sort the signatures array from newest to oldest by blockTime.
+  // (Assuming blockTime is in seconds, we compare directly.)
+  signatures.sort((a, b) => b.blockTime - a.blockTime);
+
+  // Get the newest signature.
+  const latestSig = signatures[0];
+
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const thirtyDaysAgo = Date.now() - THIRTY_DAYS_MS;
-  return (latestSig && latestSig.blockTime < thirtyDaysAgo);
+
+  // If blockTime is in seconds, convert it to milliseconds.
+  const latestSigTimeMs = latestSig.blockTime * 1000;
+
+  // Return true if the latest signature occurred before the cutoff.
+  return latestSigTimeMs < thirtyDaysAgo;
 }
+
 
 /**
  * Wallet helper: checks if the wallet qualifies as a comeback trader (inactive 60+ days, then returns).
@@ -116,6 +140,7 @@ async function scoreWallets(convertedWallets) {
     }
     // 4) Mid Trader
     else if ((runnerCount / globalRunnerCount) * 100 <= 4 && (runnerCount / globalRunnerCount) * 100 >= 2) {
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
       wallet.badges.push('mid trader');
     }
     // 5) Degen Sprayer
@@ -149,6 +174,10 @@ async function scoreWallets(convertedWallets) {
     else if (await checkIfComebackTrader(wallet.address)) {
       wallet.badges = wallet.badges.filter(b => b !== 'dead wallet');
       wallet.badges.push('comeback trader');
+    }
+
+    if(wallet.runners.length > 1 && wallet.badges.some(b => b === 'one hit wonder')){
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
     }
     wallet.badges = [...new Set(wallet.badges)];
     badged.push(wallet);
