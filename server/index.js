@@ -7,7 +7,7 @@ const path = require('path');
 const leaderboardRoutes = require('./routes/leaderboard.js');
 const authRoutes = require("./routes/auth.js")
 const coins = require("./controllers/coinsController.js")
-// const updateData = require("./helpers/updateData.js")
+const updateData = require("./helpers/updateData.js")
 const admin = require('./routes/admin.js')
 const app = express();
 
@@ -29,9 +29,9 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 })
 
-// cron.schedule('0 0 * * *', () => {
-//   updateData()
-//   }); 
+cron.schedule('0 0 * * *', () => {
+  updateData()
+  }); 
 
 app.listen(PORT, () => {
     console.log(`Express server running on port ${PORT}`);
