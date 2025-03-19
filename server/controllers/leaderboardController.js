@@ -32,7 +32,7 @@ exports.getAllTimeLeaderboard = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error fetching all-time leaderboard:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+    res.status(500).end()
   }
 };
 
