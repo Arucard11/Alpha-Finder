@@ -9,7 +9,7 @@ async function cleanUpEarlyBuyers(earlyBuyers) {
         }
 
         // Check if all individual buys are < 50
-        const allBuysBelowThreshold = transactions.buy.every(tx => (tx.amount * tx.price) < 20);
+        const allBuysBelowThreshold = transactions.buy.every(tx => (tx.amount * tx.price) < 5);
 
         // Calculate total buy volume
         const totalBuys = transactions.buy.reduce((acc, curr) => acc + (curr.amount * curr.price), 0);
