@@ -41,6 +41,47 @@ async function getTxsByTime(address,early,when) {
   return allTxs;
 }
 
+
+async function getAllTxs(address) {
+  const options = {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+      'x-chain': 'solana',
+      'X-API-KEY': `${process.env.BIRDEYE_API_KEY}`
+    }
+  };
+  
+  let offset = 0;
+  let more = true;
+  let allTxs = [];
+
+  
+  while (more) {
+    
+    try {
+      let res = await fetch(`https://public-api.birdeye.so/defi/txs/token?address=${address}&offset=${offset}&limit=50&tx_type=swap&sort_type=desc` , options);
+      let data = await res.json();
+      if(!res.ok){
+        more = false
+        return allTxs
+        
+      }
+      
+      offset += 50;
+      allTxs = allTxs.concat(data.data?.items);
+      
+      more = data.data.hasNext
+    } catch (e) {
+      console.error("Error fetching transactions:", e);
+      more = false;
+    }
+  }
+ 
+  return allTxs;
+}
+
+
 async function getEarlyBuyers(coin) {
   const { address, name, symbol, logouri, athprice, timestamps } = coin;
   let secondCheck = true
@@ -49,29 +90,7 @@ async function getEarlyBuyers(coin) {
   
   let earlyTx = await getTxsByTime(address,timestamps.early,"before");
   console.log("transactions before early timestamp",earlyTx.length)
-  // console.log(`Total transactions fetched: ${allTxs.length}`);
-  
-  // // Debug: Print a sample of transactions.
-  // if (allTxs.length > 0) {
-  //   console.log("Sample transaction:", allTxs[0].blockUnixTime);
-  // }
-  
-  // // Filter for early transactions.
-  // let earlyBuyers = allTxs.filter(tx =>{ 
-  //   console.log("tx time: ", new Date(tx.blockUnixTime* 1000).toUTCString())
-  //   console.log("early time: ", new Date(timestamps.early* 1000).toUTCString())
-  //   return tx.blockUnixTime < timestamps.early 
-  // });
-  // console.log(`Transactions before timestamps.early (${timestamps.early}): ${earlyBuyers.length}`);
-  
-  // // If no transactions are found using the early cutoff, try the late cutoff.
-  // if(earlyBuyers.length === 0) {
-  //   earlyBuyers = allTxs
-  //   console.log(`Transactions before timestamps.late : ${earlyBuyers.length}`);
-  //   secondCheck = false
-  // }
-  
-  // Group transactions by owner.
+
   let earlyBuyers = earlyTx.reduce((acc, curr) => {
     // Ensure curr.owner exists.
     if (!curr.owner) {
@@ -115,10 +134,10 @@ async function getEarlyBuyers(coin) {
 
   earlyBuyers = cleanUpEarlyBuyers(earlyBuyers);
   console.log("After cleanUpEarlyBuyers:", earlyBuyers);
-  let allTxs = await getTxsByTime(address,timestamps.late,"after");
+  let allTxs = await getAllTxs(address);
   // Add later transactions to each early buyer.
   if(secondCheck){
-    allTxs.forEach(tx => {
+    allTxs.filter(tx=> tx.blockUnixTime > timestamps.early).forEach(tx => {
       if (earlyBuyers[tx.owner]) {
         if (tx.side === "buy") {
           earlyBuyers[tx.owner].buy.push({

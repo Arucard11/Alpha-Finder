@@ -55,7 +55,7 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       })
       .then((data) => {
         if (data.length === 0) {
-          setHasMore(false);
+          setHasMore(true);
         } else {
           setWallets((prev) => {
             const combined = [...prev, ...data];
@@ -71,7 +71,7 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       .catch((err) => {
         console.error('Error fetching leaderboard data:', err);
         setError(err.message);
-        setHasMore(false);
+        setHasMore(true);
       });
   };
 
