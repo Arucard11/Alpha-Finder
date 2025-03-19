@@ -115,10 +115,10 @@ async function getEarlyBuyers(coin) {
 
   earlyBuyers = cleanUpEarlyBuyers(earlyBuyers);
   console.log("After cleanUpEarlyBuyers:", earlyBuyers);
-  let allTxs = await getTxsByTime(address,timestamps.early,"after");
+  let allTxs = await getTxsByTime(address,timestamps.late,"after");
   // Add later transactions to each early buyer.
   if(secondCheck){
-    allTxs.filter(tx => tx.blockUnixTime > timestamps.early).forEach(tx => {
+    allTxs.forEach(tx => {
       if (earlyBuyers[tx.owner]) {
         if (tx.side === "buy") {
           earlyBuyers[tx.owner].buy.push({

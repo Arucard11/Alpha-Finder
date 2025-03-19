@@ -17,7 +17,7 @@ const Login = () => {
         setWalletAddress(address);
 
         // Check whitelist status via your backend
-        const res = await fetch(`http://localhost:5000/auth/checkWhitelist/${address}`, {
+        const res = await fetch(`${import.meta.env.VITE_API_ENDPOINT}/auth/checkWhitelist/${address}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' }
         });

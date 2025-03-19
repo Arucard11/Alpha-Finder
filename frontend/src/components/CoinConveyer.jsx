@@ -8,7 +8,7 @@ const CoinConveyer = () => {
   const [coins, setCoins] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:5000/coins')
+    fetch(`${import.meta.env.VITE_API_ENDPOINT}/coins`)
       .then((response) => response.json())
       .then((data) => setCoins(data))
       .catch((err) => console.error('Error fetching coins:', err));

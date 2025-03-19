@@ -19,7 +19,7 @@ const Admin = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    fetch('http://localhost:5000/admin/whitelist', {
+    fetch(`${import.meta.env.VITE_API_ENDPOINT}/admin/whitelist`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, address }),

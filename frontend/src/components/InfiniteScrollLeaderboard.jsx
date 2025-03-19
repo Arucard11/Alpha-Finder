@@ -28,13 +28,13 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
     let body = {};
 
     if (type === 'all-time') {
-      url = 'http://localhost:5000/leaderboard/all-time';
+      url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/all-time`;
       body = { offset: currentOffset };
       if (filter !== 'pnl') {
         body.sort = filter;
       }
     } else {
-      url = 'http://localhost:5000/leaderboard/day';
+      url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/day`;
       const days = type === '7-day' ? 7 : type === '30-day' ? 30 : 90;
       body = { days, offset: currentOffset };
       if (filter !== 'pnl') {
