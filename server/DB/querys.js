@@ -131,10 +131,10 @@ async function getWalletByAddress(address) {
  * Retrieves wallets ordered by highest confidence_score.
  * Returns 50 records per call based on the provided offset.
  *
- * @param {number} [offset=0] - Number of records to skip for pagination.
+ * @param {number} [offset] - Number of records to skip for pagination.
  * @returns {Promise<Array>} - Array of wallet objects.
  */
-async function getHighestConfidenceWallets(offset = 0) {
+async function getHighestConfidenceWallets(offset) {
   const limit = 50;
   const query = `
     SELECT *
@@ -158,9 +158,9 @@ async function getHighestConfidenceWallets(offset = 0) {
  * The results can be sorted by either highest confidence score or by the number of matching runners.
  * Returns 50 records at a time using an offset.
  *
- * @param {number} [days=90] - Number of days to look back.
- * @param {number} [offset=0] - Number of records to skip for pagination.
- * @param {string} [sortBy='confidence'] - Sorting criteria: 'confidence' or 'runners'.
+ * @param {number} [days] - Number of days to look back.
+ * @param {number} [offset] - Number of records to skip for pagination.
+ * @param {string} [sortBy] - Sorting criteria: 'confidence' or 'runners'.
  * @returns {Promise<Array>} - Array of wallet objects.
  */
 async function getWalletsDynamic(days, offset, sortBy) {
