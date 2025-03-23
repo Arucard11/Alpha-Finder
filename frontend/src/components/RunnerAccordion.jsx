@@ -1,37 +1,70 @@
 // src/components/RunnerAccordion.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
   Typography,
-  Avatar,
-  Box
+  CircularProgress,
+  Box,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RunnerChart from './RunnerChart';
 
 const RunnerAccordion = ({ runner, computePnl }) => {
-  const pnl = computePnl(runner).toFixed(2);
+  const [expanded, setExpanded] = useState(false);
+  const [chartData, setChartData] = useState(null);
+  const [loadingChart, setLoadingChart] = useState(false);
+  const [chartError, setChartError] = useState(null);
+
+  const handleAccordionChange = (event, isExpanded) => {
+    setExpanded(isExpanded);
+    if (isExpanded && !chartData) {
+      // Fetch chart data when expanded for the first time
+      setLoadingChart(true);
+      setChartError(null);
+      fetch(`${import.meta.env.VITE_API_ENDPOINT}/getprices/${runner.address}`)
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`Error: ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then((data) => {
+          setChartData(data);
+          setLoadingChart(false);
+        })
+        .catch((err) => {
+          setChartError(err.message);
+          setLoadingChart(false);
+        });
+    }
+  };
 
   return (
-    <Accordion sx={{ backgroundColor: '#1d1d1d', color: '#ffffff', mb: 1 }}>
+    <Accordion expanded={expanded} onChange={handleAccordionChange}>
       <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#00e676' }} />}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Avatar src={runner.logouri} alt={runner.name} />
-          <Box>
-            <Typography variant="subtitle1" sx={{ color: '#ff4081' }}>
-              {runner.name} ({runner.symbol})
-            </Typography>
-            <Typography variant="body2">
-              Score: {runner.score.toFixed(2)} | PnL: {pnl}
-            </Typography>
-          </Box>
-        </Box>
+        <Typography variant="body1" sx={{ color: '#fff' }}>
+          Runner: {runner.name} ({runner.symbol}) - Score: {runner.score.toFixed(2)}
+        </Typography>
       </AccordionSummary>
       <AccordionDetails>
-        <Box sx={{ mt: 1 }}>
-          <RunnerChart runner={runner} />
+        <Box>
+          {loadingChart && <CircularProgress size={24} sx={{ color: '#00e676' }} />}
+          {chartError && (
+            <Typography sx={{ color: 'red' }}>
+              Error loading chart: {chartError}
+            </Typography>
+          )}
+          {chartData && !loadingChart && (
+            // Pass a runner object with the fetched chart data in timestamps.allprices
+            <RunnerChart
+              runner={{
+                ...runner,
+                timestamps: { ...runner.timestamps, allprices: chartData },
+              }}
+            />
+          )}
         </Box>
       </AccordionDetails>
     </Accordion>
