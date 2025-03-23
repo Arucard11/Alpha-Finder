@@ -3,64 +3,31 @@ const { connection } = require('./connection.js');
 const { PublicKey } = require('@solana/web3.js');
 
 /**
- * Helper to find the closest price in `allprices` given a target timestamp.
- * (Retained for backward compatibility if needed.)
- */
-function getClosestPrice(allprices, targetUnixTime) {
-  if (!Array.isArray(allprices) || allprices.length === 0) return null;
-  let closest = allprices[0];
-  let minDiff = Math.abs(closest.unixTime - targetUnixTime);
-  for (let i = 1; i < allprices.length; i++) {
-    const diff = Math.abs(allprices[i].unixTime - targetUnixTime);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = allprices[i];
-    }
-  }
-  return closest.value || null;
-}
-
-/**
  * Wallet helper: checks if the wallet is inactive (dead) for over 30 days.
  */
 async function checkIfDeadWallet(address) {
-  // Retrieve up to 100 signatures for the address.
   const signatures = await connection.getSignaturesForAddress(
     new PublicKey(address),
     { limit: 100 }
   );
-
-  // If no signatures are found, you might decide what to return.
-  if (!signatures.length) {
-    // For example, if no signatures, you might consider it not dead.
-    return false;
-  }
-  
-  // Sort the signatures array from newest to oldest by blockTime.
-  // (Assuming blockTime is in seconds, we compare directly.)
+  if (!signatures.length) return false;
   signatures.sort((a, b) => b.blockTime - a.blockTime);
-
-  // Get the newest signature.
   const latestSig = signatures[0];
-
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const thirtyDaysAgo = Date.now() - THIRTY_DAYS_MS;
-
-  // If blockTime is in seconds, convert it to milliseconds.
-  const latestSigTimeMs = latestSig.blockTime * 1000;
-
-  // Return true if the latest signature occurred before the cutoff.
-  return latestSigTimeMs < thirtyDaysAgo;
+  return (latestSig.blockTime * 1000 < thirtyDaysAgo);
 }
 
-
 /**
- * Wallet helper: checks if the wallet qualifies as a comeback trader (inactive 60+ days, then returns).
+ * Wallet helper: checks if the wallet qualifies as a comeback trader (inactive 60+ days).
  */
 async function checkIfComebackTrader(address) {
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const thirtyDaysAgo = Date.now() - THIRTY_DAYS_MS;
-  const signatures = await connection.getSignaturesForAddress(new PublicKey(address), { limit: 100 });
+  const signatures = await connection.getSignaturesForAddress(
+    new PublicKey(address),
+    { limit: 100 }
+  );
   let total = 0;
   for (const sig of signatures) {
     if (sig.blockTime < thirtyDaysAgo) {
@@ -71,18 +38,9 @@ async function checkIfComebackTrader(address) {
 }
 
 /**
- * Returns the unixTime of the first price entry from runner.timestamps.allprices.
- */
-function getStartTime(runner) {
-  if (runner.timestamps && Array.isArray(runner.timestamps.allprices) && runner.timestamps.allprices.length > 0) {
-    return runner.timestamps.allprices[0].unixTime;
-  }
-  return null;
-}
-
-/**
  * Returns how many runners are held past the 'late' threshold.
- * A runner is considered held past if there is at least one sell transaction after runner.timestamps.late.
+ * A runner is considered "held past" if there is at least one sell transaction
+ * after runner.timestamps.late.
  */
 function totalRunnersHeldPastLate(runners) {
   let total = 0;
@@ -103,7 +61,7 @@ function totalRunnersHeldPastLate(runners) {
  * Uses:
  *   - runner.timestamps.early: Buy threshold time (buys before this are “early”)
  *   - runner.timestamps.late: Holding threshold time (sells after this are “held”)
- *   - runner.timestamps.twoMillion / fiveMillion: times the runner hit those market caps
+ *   - runner.timestamps.twoMillion / fiveMillion: Times the runner hit those market caps (may be null)
  * Missing timestamps are handled gracefully.
  */
 async function scoreWallets(convertedWallets) {
@@ -176,7 +134,7 @@ async function scoreWallets(convertedWallets) {
       wallet.badges.push('comeback trader');
     }
 
-    if(wallet.runners.length > 1 && wallet.badges.some(b => b === 'one hit wonder')){
+    if (wallet.runners.length > 1 && wallet.badges.includes('one hit wonder')) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
     }
     wallet.badges = [...new Set(wallet.badges)];
@@ -188,19 +146,22 @@ async function scoreWallets(convertedWallets) {
   // =========================
 
   // 1) Early Buy Points:
-  // For each buy before runner.timestamps.early, compute the fraction relative to the period from the start time to the early threshold.
+  // For each buy occurring before runner.timestamps.early, compute the fraction relative to
+  // the period from the earliest buy (from the transactions) to the early threshold.
   // Award points: fraction ≥ 0.75 → 5, ≥ 0.50 → 4, ≥ 0.25 → 3, otherwise 2.
-  // Additionally, if exactly one buy exists and its total value is less than $5, subtract 1 point.
+  // Additionally, if the highest buy value (across all buys) is less than $5, subtract 1 point.
   function computeEarlyBuyPoints(runner) {
     if (!runner.timestamps || runner.timestamps.early == null) return 2;
     const threshold = runner.timestamps.early;
-    const startTime = getStartTime(runner);
-    if (!startTime || threshold <= startTime) return 2;
+    const buyTimestamps = runner.transactions.buy.map(b => b.timestamp);
+    const firstBuy = Math.min(...buyTimestamps);
+    if (threshold <= firstBuy) return 2;
     let bestPoints = 0;
     for (const buy of runner.transactions.buy) {
       let points = 2;
       if (buy.timestamp <= threshold) {
-        const fraction = (threshold - buy.timestamp) / (threshold - startTime);
+        const denom = threshold - firstBuy;
+        const fraction = denom > 0 ? (threshold - buy.timestamp) / denom : 1;
         if (fraction >= 0.75) {
           points = 5;
         } else if (fraction >= 0.50) {
@@ -213,17 +174,16 @@ async function scoreWallets(convertedWallets) {
       }
       bestPoints = Math.max(bestPoints, points);
     }
-    if (runner.transactions.buy.length === 1) {
-      const singleBuy = runner.transactions.buy[0];
-      if (singleBuy.amount * singleBuy.price < 5) { // Changed threshold from $50 to $5
-        bestPoints = Math.max(bestPoints - 1, 1);
-      }
+    // Check highest buy value among all buys; if below $5, subtract 1 point (min 1)
+    const maxBuyValue = Math.max(...runner.transactions.buy.map(b => b.amount * b.price));
+    if (maxBuyValue < 5) {
+      bestPoints = Math.max(bestPoints - 1, 1);
     }
-    return bestPoints > 0 ? bestPoints : 2;
+    return bestPoints;
   }
 
   // 2) Holding Multiplier:
-  // Determines the multiplier based on sell timestamps compared to thresholds:
+  // Based on sell timestamps compared to the thresholds:
   //   - Sell at or after fiveMillion → 1.5
   //   - Else if sell at or after twoMillion → 1.2
   //   - Else if sell at or after late → 1.0
@@ -235,17 +195,18 @@ async function scoreWallets(convertedWallets) {
     let multiplier = 1.0;
     if (runner.transactions.sell && runner.transactions.sell.length > 0) {
       for (const sell of runner.transactions.sell) {
-        if (tFiveMillion && sell.timestamp >= tFiveMillion) {
+        if (tFiveMillion != null && sell.timestamp >= tFiveMillion) {
           multiplier = Math.max(multiplier, 1.5);
-        } else if (tTwoMillion && sell.timestamp >= tTwoMillion) {
+        } else if (tTwoMillion != null && sell.timestamp >= tTwoMillion) {
           multiplier = Math.max(multiplier, 1.2);
-        } else if (tLate && sell.timestamp >= tLate) {
+        } else if (tLate != null && sell.timestamp >= tLate) {
           multiplier = Math.max(multiplier, 1.0);
         } else {
           multiplier = Math.max(multiplier, 0.7);
         }
       }
     } else {
+      // If never sold, holding multiplier remains 1.0.
       multiplier = 1.0;
     }
     return multiplier;
@@ -253,10 +214,10 @@ async function scoreWallets(convertedWallets) {
 
   // 3) Conviction Bonus:
   // For never-sold runners:
-  //   - Normally, if latest buy is within 90 days, bonus = 1.5; otherwise, bonus = 1.2.
-  //   - However, if the highest buy value is less than $5, bonus is reduced to 1.0.
-  // For sold runners, choose the best bonus:
-  //   - Sell at or after twoMillion → 1.2, at or after late → 1.0, else 0.8.
+  //   - If the latest buy is within 90 days, bonus = 1.5; otherwise, bonus = 1.2.
+  //   - However, if the highest buy value is less than $5, bonus is set to 1.0.
+  // For sold runners:
+  //   - Sell at or after twoMillion → 1.2, at or after late → 1.0, otherwise 0.8.
   function computeConvictionBonus(runner) {
     const tLate = runner.timestamps?.late;
     const tTwoMillion = runner.timestamps?.twoMillion;
@@ -264,9 +225,8 @@ async function scoreWallets(convertedWallets) {
     if (!runner.transactions.sell || runner.transactions.sell.length === 0) {
       const latestBuy = Math.max(...runner.transactions.buy.map(b => b.timestamp));
       const nowSec = Math.floor(Date.now() / 1000);
-      // Check highest buy value among all buys
       const maxBuyValue = Math.max(...runner.transactions.buy.map(b => b.amount * b.price));
-      if (maxBuyValue < 5) { // Changed threshold from $50 to $5
+      if (maxBuyValue < 5) { // If highest buy is less than $5, bonus = 1.0
         bonus = 1.0;
       } else {
         bonus = (nowSec - latestBuy <= 90 * 24 * 60 * 60) ? 1.5 : 1.2;
@@ -274,9 +234,9 @@ async function scoreWallets(convertedWallets) {
     } else {
       for (const sell of runner.transactions.sell) {
         let candidate = 0.8;
-        if (tTwoMillion && sell.timestamp >= tTwoMillion) {
+        if (tTwoMillion != null && sell.timestamp >= tTwoMillion) {
           candidate = 1.2;
-        } else if (tLate && sell.timestamp >= tLate) {
+        } else if (tLate != null && sell.timestamp >= tLate) {
           candidate = 1.0;
         } else {
           candidate = 0.8;
@@ -289,19 +249,25 @@ async function scoreWallets(convertedWallets) {
 
   // 4) Early Exit Penalty:
   // For each sell occurring before runner.timestamps.late, compute:
-  // fraction = (runner.timestamps.late - sell.timestamp) / (runner.timestamps.late - runner.timestamps.early)
+  //   fraction = (runner.timestamps.late - sell.timestamp) / (runner.timestamps.late - runner.timestamps.early)
   // Then assign:
   //   fraction > 0.75 → 40% penalty,
   //   fraction > 0.50 → 30% penalty,
-  //   else 0%.
+  //   otherwise 0%.
   // Return the minimal (i.e. best) penalty among sells.
   function computeEarlyExitPenalty(runner) {
     const tEarly = runner.timestamps?.early;
     const tLate = runner.timestamps?.late;
-    if (!runner.transactions.sell || runner.transactions.sell.length === 0 || tEarly == null || tLate == null || tLate <= tEarly) {
+    if (
+      !runner.transactions.sell ||
+      runner.transactions.sell.length === 0 ||
+      tEarly == null ||
+      tLate == null ||
+      tLate <= tEarly
+    ) {
       return 0;
     }
-    let minPenalty = 1; // start high so we can reduce it
+    let minPenalty = 1;
     for (const sell of runner.transactions.sell) {
       let penalty = 0;
       if (sell.timestamp < tLate) {
@@ -343,8 +309,7 @@ async function scoreWallets(convertedWallets) {
     // =========================
 
     // Success Rate:
-    // For each runner, if any buy occurred before runner.timestamps.early, count it;
-    // and if the runner was "held" (either never sold and current time > late, or any sell after late) count it as success.
+    // Count runners that had at least one buy before runner.timestamps.early and were held past runner.timestamps.late.
     let boughtBelowCount = 0;
     let successCount = 0;
     for (const runner of wallet.runners) {
@@ -398,6 +363,12 @@ async function scoreWallets(convertedWallets) {
   //   SAVE TO DATABASE
   // =====================
   for (const wallet of badged) {
+    // Remove the now unused 'allprices' from each runner's timestamps.
+    for (const runner of wallet.runners) {
+      if (runner.timestamps && runner.timestamps.hasOwnProperty('allprices')) {
+        delete runner.timestamps.allprices;
+      }
+    }
     try {
       if (wallet.id) {
         await updateWallet(wallet.id, 'runners', wallet.runners);

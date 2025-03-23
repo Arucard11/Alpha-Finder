@@ -1,4 +1,4 @@
-async function cleanUpEarlyBuyers(earlyBuyers) {
+ function cleanUpEarlyBuyers(earlyBuyers) {
     for (let [wallet, transactions] of Object.entries(earlyBuyers)) {
         if (wallet === "mintInfo") continue; // Skip mint info
 
@@ -19,7 +19,7 @@ async function cleanUpEarlyBuyers(earlyBuyers) {
 
         // ✅ Delete wallets where all individual buys are < 50
         // ✅ Delete wallets where total buy volume < 50 AND has no sells
-        if (allBuysBelowThreshold || (totalBuys < 50 && !hasSells)) {
+        if (allBuysBelowThreshold || (totalBuys < 50 && !hasSells) || transactions.buy.length <= 15) {
             delete earlyBuyers[wallet];
         }
     }

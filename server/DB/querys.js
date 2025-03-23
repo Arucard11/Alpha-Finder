@@ -8,7 +8,7 @@ const pool = new Pool({
  database:process.env.PG_DATABASE ,
  user:process.env.PG_USER ,
  password:process.env.PG_PASSWORD,
-  
+ statement_timeout: 600000,
 });
 
 // Helper function to validate and sanitize strings.
@@ -117,6 +117,17 @@ async function updateWallet(id, field, value) {
 async function getWalletByAddress(address) {
   const sanitizedAddress = sanitizeString(address);
   const query = `SELECT * FROM wallets WHERE address = $1;`;
+  try {
+    const result = await pool.query(query, [sanitizedAddress]);
+    return result.rows[0];
+  } catch (err) {
+    console.error('Error fetching wallet by address:', err);
+    throw err;
+  }
+}
+async function getRunnerByAddress(address) {
+  const sanitizedAddress = sanitizeString(address);
+  const query = `SELECT * FROM runners WHERE address = $1;`;
   try {
     const result = await pool.query(query, [sanitizedAddress]);
     return result.rows[0];
@@ -421,6 +432,7 @@ async function deleteWhitelist(walletAddress) {
     getAllRunners,
     addFiltered,
     getWalletsDynamic,
+    getRunnerByAddress,
     getAllFiltered,
     pool,
   };

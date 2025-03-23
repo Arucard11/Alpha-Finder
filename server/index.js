@@ -17,7 +17,7 @@ app.use(cors());
 // You can add other endpoints for wallets and runners similarly...
 app.use('/leaderboard', leaderboardRoutes);
 app.use('/auth', authRoutes)
-app.get('/coins',coins.getCoins)
+app.get('/getprices/:address',coins.getCoins)
 app.use('/admin',admin)
 
 const PORT = process.env.PORT || 5000;

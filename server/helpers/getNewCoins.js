@@ -16,13 +16,20 @@ async function getLiquid(){
     }
   };
   while(more){
+    try{
       let res = await fetch(`https://public-api.birdeye.so/defi/v3/token/list?sort_by=liquidity&sort_type=desc&min_liquidity=20000&offset=${offset}&limit=100`, options)
       let data = await res.json()
+      if(!res.ok){
+        return allCoins
+      }
       offset+=100
       allCoins = allCoins.concat(data.data.items)
       if(data.data.items.length < 100){
         more = false
       }
+    }catch(e){
+      console.log(e)
+    }
   }
 return allCoins
 }

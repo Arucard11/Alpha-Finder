@@ -1,7 +1,7 @@
 require("dotenv").config()
-const {getAllRunners} = require('../DB/querys.js')
+const {getAllRunners,getRunnerByAddress} = require('../DB/querys.js')
 
 exports.getCoins = async(req,res) =>{
-   let runners =  await getAllRunners()
-   res.json(runners)
+   let runner=  await getRunnerByAddress(req.params.address)
+   res.json(runner.timestamps.allprices)
 }

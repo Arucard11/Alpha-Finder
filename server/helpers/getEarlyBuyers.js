@@ -132,8 +132,6 @@ async function getEarlyBuyers(coin) {
 
   console.log("After grouping by owner:", earlyBuyers);
 
-  earlyBuyers = await cleanUpEarlyBuyers(earlyBuyers);
-  console.log("After cleanUpEarlyBuyers:", earlyBuyers);
   let allTxs = await getAllTxs(address);
   // Add later transactions to each early buyer.
   if(secondCheck){
@@ -157,9 +155,11 @@ async function getEarlyBuyers(coin) {
       }
     });
   }
+  
 
-  console.log("Done processing one coin.");
-  return earlyBuyers;
+  let cleaned = cleanUpEarlyBuyers(earlyBuyers);
+  console.log("After cleanUpEarlyBuyers:", cleaned);
+  return cleaned
 }
 
 module.exports = getEarlyBuyers;

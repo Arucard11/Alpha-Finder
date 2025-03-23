@@ -4,7 +4,7 @@ require("dotenv").config();
 const NodeCache = require('node-cache');
 
 // Create a cache instance with a default TTL (in seconds)
-const cache = new NodeCache({ stdTTL: 200 }); // Cache expires after 200 seconds
+const cache = new NodeCache({ stdTTL: 3200 }); // Cache expires after 200 seconds
 
 // Controller for all-time high leaderboard
 exports.getAllTimeLeaderboard = async (req, res) => {
@@ -16,20 +16,20 @@ exports.getAllTimeLeaderboard = async (req, res) => {
     // Check if the data exists in the cache
     if (cache.has(cacheKey)) {
       console.log("Cache hit for all-time leaderboard");
-      return res.json(cache.get(cacheKey));
+      return res.json(cache.get(cacheKey).slice(offset,20));
     }
 
     // If not in cache, fetch data from the database
     const topWallets = await getHighestConfidenceWallets(offset);
     console.log("All time request: cache miss");
-    
+    console.log(topWallets.length)
     // Slice the data as needed
-    const result = topWallets.slice(offset, 11);
+    
 
     // Cache the result for future requests
-    cache.set(cacheKey, result);
+    cache.set(cacheKey, topWallets);
 
-    res.json(result);
+    res.json(topWallets.slice(offset,20));
   } catch (error) {
     console.error('Error fetching all-time leaderboard:', error);
     res.status(500).end()
@@ -46,7 +46,7 @@ exports.getDayLeaderboard = async (req, res) => {
     // Check if the data exists in the cache
     if (cache.has(cacheKey)) {
       console.log("Cache hit for day leaderboard");
-      return res.json(cache.get(cacheKey));
+      return res.json(cache.get(cacheKey).slice(offset,20));
     }
 
     // If not in cache, fetch data from the database
@@ -54,7 +54,7 @@ exports.getDayLeaderboard = async (req, res) => {
     console.log("Request made to days filters: cache miss");
     
     // Slice the data as needed
-    const result = wallets.slice(offset, 11);
+    const result = wallets
 
     // Cache the result for future requests
     cache.set(cacheKey, result);
