@@ -130,7 +130,7 @@ async function getEarlyBuyers(coin) {
     return acc;
   }, { mintInfo: { address, name, symbol, logouri, timestamps, athprice} });
 
-  console.log("After grouping by owner:", earlyBuyers);
+  
 
   let allTxs = await getAllTxs(address);
   // Add later transactions to each early buyer.
@@ -158,7 +158,7 @@ async function getEarlyBuyers(coin) {
   
 
   let cleaned = cleanUpEarlyBuyers(earlyBuyers);
-  console.log("After cleanUpEarlyBuyers:", cleaned);
+ 
   return cleaned
 }
 
