@@ -15,13 +15,13 @@ async function getRunners(){
         const newRunners = getUniqueFromFirst(newCoins,oldRunners)
 
         for(let coin of newRunners){
-
+           
             let {athMarketCap,athprice,timestamps} = await getAth(coin.address)
-            
+  
             if(athMarketCap >= 1000000){
-                    coin.athprice = athprice
-                    coin.timestamps = timestamps
-                    coin.athmc = athMarketCap
+                coin.athprice = athprice
+                coin.timestamps = timestamps
+                coin.athmc = athMarketCap
                     
                     await addRunner(coin)   
             }else{
