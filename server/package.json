@@ -11,15 +11,18 @@
     "dev": "nodemon index.js"
   },
   "dependencies": {
+    "@project-serum/borsh": "^0.2.5",
     "@solana/spl-token": "^0.4.12",
     "@solana/web3.js": "^1.98.0",
     "axios": "^1.7.9",
     "borsh": "^2.0.0",
+    "bs58": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "node-cache": "^5.1.2",
     "node-cron": "^3.0.3",
+    "p-limit": "^6.2.0",
     "pg": "^8.13.3"
   }
 }

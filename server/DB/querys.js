@@ -247,8 +247,8 @@ async function getAllWallets() {
 
 
 async function addFiltered(data) {
-    const { address } = data;
-    const sanitizedAddress = sanitizeString(address);
+    
+    const sanitizedAddress = sanitizeString(data);
     const query = `
       INSERT INTO filtered (address)
       VALUES ($1)
@@ -287,7 +287,7 @@ async function getAllFiltered() {
  * @returns {Promise<Object>} The inserted runner record.
  */
 async function addRunner(data) { 
-    const { address, name, timestamps, athprice,symbol,logoURI,athmc, created_at} = data;
+    const { address, name, timestamps, athprice,symbol,logo_uri,athmc, created_at} = data;
     const sanitizedAddress = sanitizeString(address);
     const sanitizedName = sanitizeString(name);
     const timestamp = JSON.stringify(timestamps)
@@ -298,7 +298,7 @@ async function addRunner(data) {
       RETURNING *;
     `;
     try {
-      const result = await pool.query(query, [sanitizedAddress, sanitizedName,timestamp,athprice,symbol,logoURI,athmc, created_at]);
+      const result = await pool.query(query, [sanitizedAddress, sanitizedName,timestamp,athprice,symbol,logo_uri,athmc, created_at]);
       return result.rows[0];
     } catch (err) {
       console.error('Error inserting runner:', err);

@@ -19,12 +19,11 @@ async function getRunners(){
             let {athMarketCap,athprice,timestamps} = await getAth(coin.address)
             
             if(athMarketCap >= 1000000){
-                coin.athprice = athprice
-                coin.timestamps = timestamps
-                coin.athmc = athMarketCap
-                
-                await addRunner(coin)
-                
+                    coin.athprice = athprice
+                    coin.timestamps = timestamps
+                    coin.athmc = athMarketCap
+                    
+                    await addRunner(coin)   
             }else{
                 // await addFiltered(coin)
             }
