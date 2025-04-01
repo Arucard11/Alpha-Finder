@@ -1,9 +1,9 @@
 const getAth = require("./getATH.js")
 const getNewCoins = require("./getNewCoins.js")
-const {addFiltered,getAllFiltered,getAllRunners,addRunner} = require("../DB/querys.js")
+const {addFiltered,getAllFiltered,getAllRunnerAddresses,addRunner} = require("../DB/querys.js")
 
 function getUniqueFromFirst(arr1, arr2) {
-    return arr1.filter(coin => !arr2.some(coin2 => coin2.address === coin.address));
+    return arr1.filter(coin => !arr2.some(address => address === coin.address));
   }
 
 async function getRunners(){
@@ -11,7 +11,7 @@ async function getRunners(){
     
     try{
         const newCoins = await getNewCoins()
-        const oldRunners = await getAllRunners()
+        const oldRunners = await getAllRunnerAddresses()
         const newRunners = getUniqueFromFirst(newCoins,oldRunners)
 
         for(let coin of newRunners){

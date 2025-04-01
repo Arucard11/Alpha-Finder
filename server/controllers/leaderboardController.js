@@ -1,4 +1,4 @@
-const { getHighestConfidenceWallets, getWalletsDynamic } = require('../DB/querys.js');
+const { getWalletsSorted, getWalletsDynamic } = require('../DB/querys.js');
 
 require("dotenv").config();
 const NodeCache = require('node-cache');
@@ -9,30 +9,49 @@ const cache = new NodeCache({ stdTTL: 3200 }); // Cache expires after 200 second
 // Controller for all-time high leaderboard
 exports.getAllTimeLeaderboard = async (req, res) => {
   try {
-    const { offset } = req.body;
-    // Construct a unique cache key based on the offset
-    const cacheKey = `allTimeLeaderboard_${offset}`;
+    // Extract offset and the new sort parameter from the request body
+    // Provide default values if they are missing
+    const offset = parseInt(req.body.offset, 10) || 0; // Default offset to 0 if missing/invalid
+    const sort = req.body.sort || 'confidence'; // Default sort to 'confidence' if missing
+
+    // Validate sort parameter if necessary (optional, depends on security needs)
+    const validSorts = ['confidence', 'pnl', 'runners'];
+    if (!validSorts.includes(sort)) {
+        console.warn(`Invalid sort parameter received: ${sort}. Defaulting to 'confidence'.`);
+        sort = 'confidence'; // Or return a 400 Bad Request error
+        // return res.status(400).json({ error: 'Invalid sort parameter specified.' });
+    }
+
+    // Construct a unique cache key incorporating both sort criteria and offset
+    const cacheKey = `allTimeLeaderboard_${sort}_${offset}`;
 
     // Check if the data exists in the cache
     if (cache.has(cacheKey)) {
-      console.log("Cache hit for all-time leaderboard");
-      return res.json(cache.get(cacheKey).slice(offset,50));
+      console.log(`Cache hit for all-time leaderboard (sort: ${sort}, offset: ${offset})`);
+      // The data in cache is already the correct page (limit 50, starting at offset)
+      // **No need to slice again here**
+      return res.json(cache.get(cacheKey));
     }
 
-    // If not in cache, fetch data from the database
-    const topWallets = await getHighestConfidenceWallets(offset);
-    console.log("All time request: cache miss");
-    console.log(topWallets.length)
-    // Slice the data as needed
-    
+    // If not in cache, fetch data from the database using the generalized function
+    console.log(`Cache miss for all-time leaderboard (sort: ${sort}, offset: ${offset}). Fetching from DB...`);
+    // Pass the sort criteria to the database function
+    const topWallets = await getWalletsSorted(offset, sort);
 
-    // Cache the result for future requests
-    cache.set(cacheKey, topWallets);
+    console.log(`Fetched ${topWallets.length} wallets from DB.`);
 
-    res.json(topWallets.slice(offset,50));
+    // Cache the result (which is already the correct page) for future requests
+    // Use the dynamic cache key
+    cache.set(cacheKey, topWallets); // Cache the exact data returned by the DB query
+
+    // Send the fetched data (which is already the correct page)
+    // **No need to slice again here**
+    res.json(topWallets);
+
   } catch (error) {
-    console.error('Error fetching all-time leaderboard:', error);
-    res.status(500).end()
+    // Log the specific context of the error
+    console.error(`Error fetching all-time leaderboard (sort: ${req.body.sort}, offset: ${req.body.offset}):`, error);
+    res.status(500).json({ error: 'Internal Server Error' }); // Send a JSON error response
   }
 };
 

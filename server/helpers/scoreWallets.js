@@ -1,6 +1,6 @@
 // PnL Calculation Added: Tuesday, April 1, 2025 at 7:11:03 AM UTC
 
-const { getAllRunners, updateWallet, addWallet } = require('../DB/querys.js');
+const { getTotalRunners, updateWallet, addWallet } = require('../DB/querys.js');
 const { connection } = require('./connection.js');
 const { PublicKey } = require('@solana/web3.js');
 
@@ -257,7 +257,6 @@ function computeEarlyExitPenalty(runner) {
  * Main scoring function: Assigns badges and calculates scores including PnL.
  */
 async function scoreWallets(convertedWallets) {
-  const allRunners = await getAllRunners();
   let badged = [];
 
   console.log(`Starting scoring for ${convertedWallets.length} wallets...`);
@@ -267,7 +266,7 @@ async function scoreWallets(convertedWallets) {
   // =====================
   for (const wallet of convertedWallets) {
     const runnerCount = wallet.runners.length;
-    const globalRunnerCount = allRunners.length;
+    const globalRunnerCount = await getTotalRunners();
     
     // 1) Legendary Buyer
     if (runnerCount >= 10) {

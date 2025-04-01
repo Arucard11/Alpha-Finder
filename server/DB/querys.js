@@ -112,6 +112,24 @@ async function getRunnerByAddress(address) {
 }
 
 
+
+async function getTotalRunners() {
+  // *** IMPORTANT: Change 'runners' to your actual table name if different! ***
+  const tableName = 'runners';
+  const queryText = `SELECT COUNT(*) FROM ${tableName};`;
+
+  try {
+    const result = await pool.query(queryText);
+    // COUNT(*) returns a bigint, often as a string by pg. Convert to number.
+    const count = parseInt(result.rows[0].count, 10);
+    return count;
+  } catch (error) {
+    console.error(`Error fetching runner count from table '${tableName}':`, error);
+    // Re-throw the error so the caller knows the operation failed
+    throw new Error(`Failed to get total runners: ${error.message}`);
+  }
+}
+
 /**
  * Retrieves wallets ordered by highest confidence_score.
  * Returns 50 records per call based on the provided offset.
@@ -119,21 +137,50 @@ async function getRunnerByAddress(address) {
  * @param {number} [offset] - Number of records to skip for pagination.
  * @returns {Promise<Array>} - Array of wallet objects.
  */
-async function getHighestConfidenceWallets(offset) {
+async function getWalletsSorted(offset, sortBy = 'confidence') { // Default sortBy to 'confidence'
   const limit = 50;
+  let orderByClause;
+
+  console.log(`Fetching wallets: sortBy=${sortBy}, offset=${offset}, limit=${limit}`);
+
+  // Determine the ORDER BY clause based on the sortBy parameter
+  switch (sortBy) {
+    case 'pnl':
+      // Sort by Profit and Loss (descending), NULLs last, tie-break with ID
+      orderByClause = 'ORDER BY pnl DESC NULLS LAST, id ASC';
+      console.log("Sorting by PnL");
+      break;
+    case 'runners':
+      // Sort by the number of elements in the 'runners' JSONB array (descending), tie-break with ID
+      // Assumes 'runners' is a JSONB array column
+      orderByClause = 'ORDER BY jsonb_array_length(runners) DESC NULLS LAST, id ASC';
+       console.log("Sorting by Runner Count");
+      break;
+    case 'confidence':
+    default:
+      // Default sort by confidence_score (descending), tie-break with ID
+      orderByClause = 'ORDER BY confidence_score DESC, id ASC';
+      console.log("Sorting by Confidence Score (default)");
+      break;
+  }
+
+  // Construct the final query
   const query = `
     SELECT *
     FROM wallets
-    ORDER BY confidence_score DESC, id ASC
+    ${orderByClause}
     LIMIT $1 OFFSET $2;
   `;
 
   try {
     const result = await pool.query(query, [limit, offset]);
-    return result.rows;
+    console.log(`Query successful, returned ${result.rows.length} rows.`);
+    return result.rows; // Return the rows directly fetched from DB
   } catch (error) {
-    console.error('Error in getHighestConfidenceWallets:', error);
-    throw error;
+    console.error(`Error in getWalletsSorted (sortBy: ${sortBy}):`, error);
+    console.error('Failed Query:', query); // Log the specific query that failed
+    console.error('Failed Params:', [limit, offset]);
+    throw error; // Re-throw the error for the caller to handle
   }
 }
 
@@ -383,6 +430,36 @@ async function updateRunner(id, field, value) {
   }
 
 
+  async function getAllRunnerAddresses(tableName = 'runners', addressColumn = 'address') {
+    // *** IMPORTANT: Verify 'runners' and 'address' are correct for your DB! ***
+    // Ensure the addressColumn name is safe if it were dynamic (though unlikely here)
+    // Basic sanitization: remove anything not alphanumeric or underscore
+    const safeAddressColumn = addressColumn.replace(/[^a-zA-Z0-9_]/g, '');
+    if (safeAddressColumn !== addressColumn) {
+        throw new Error(`Invalid address column name specified: ${addressColumn}`);
+    }
+  
+    // Use the sanitized column name in the query
+    const queryText = `SELECT ${safeAddressColumn} FROM ${tableName};`;
+    console.log(`Executing query: ${queryText}`); // Optional: logging
+  
+    try {
+      const result = await pool.query(queryText);
+  
+      // result.rows will be an array of objects, e.g., [{ address: '123 Main St' }, { address: '456 Oak Ave' }]
+      // We need to extract just the address string from each object.
+      const addresses = result.rows.map(row => row[safeAddressColumn]); // Use bracket notation for dynamic column name
+  
+      console.log(`Found ${addresses.length} addresses.`); // Optional: logging
+      return addresses; // Returns an array of strings: ['123 Main St', '456 Oak Ave']
+  
+    } catch (error) {
+      console.error(`Error fetching runner addresses from table '${tableName}', column '${safeAddressColumn}':`, error);
+      // Re-throw the error so the caller knows the operation failed
+      throw new Error(`Failed to get runner addresses: ${error.message}`);
+    }
+  }
+
 async function getWhitelist(){
   try {
     const result = await pool.query('SELECT * FROM whitelist;');
@@ -449,9 +526,11 @@ async function deleteWhitelist(walletAddress) {
     updateWallet,
     getWalletByAddress,
     addRunner,
+    getTotalRunners,
     updateRunner,
+    getAllRunnerAddresses,
     getAllWallets,
-    getHighestConfidenceWallets,
+    getWalletsSorted,
     getAllRunners,
     addFiltered,
     getWalletsDynamic,
