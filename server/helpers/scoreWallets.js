@@ -266,30 +266,71 @@ async function scoreWallets(convertedWallets) {
   //   BADGE ASSIGNMENT
   // =====================
   for (const wallet of convertedWallets) {
-    if (!wallet.runners) wallet.runners = [];
-    if (!wallet.badges) wallet.badges = [];
     const runnerCount = wallet.runners.length;
-    const globalRunnerCount = allRunners.length > 0 ? allRunners.length : 1;
-    const participationRate = (runnerCount / globalRunnerCount) * 100;
+    const globalRunnerCount = allRunners.length;
+    
+    // 1) Legendary Buyer
+    if (runnerCount >= 10) {
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder' && b !== 'potential alpha'  && b !== 'mid trader' && b !== 'degen sprayer');
+      wallet.badges.push('legendary buyer');
+    }
+    // 2) Potential Alpha
+    else if ((runnerCount / globalRunnerCount) * 100 >= 5 && (runnerCount / globalRunnerCount) * 100 <= 9) {
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder'&& b !== 'mid trader' && b !== 'degen sprayer');
+      wallet.badges.push('potential alpha');
+    }
+    // 3) High Conviction
+    else if (
+      wallet.runners.some(runner =>
+        runner.transactions.sell.some(sell =>
+          runner.timestamps && runner.timestamps.twoMillion && sell.timestamp > runner.timestamps.twoMillion
+        )
+      )
+    ) {
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
+      wallet.badges.push('high conviction');
+    }
+    // 4) Mid Trader
+    else if ((runnerCount / globalRunnerCount) * 100 <= 4 && (runnerCount / globalRunnerCount) * 100 >= 2) {
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder'  && b !== 'degen sprayer');
+      wallet.badges.push('mid trader');
+    }
+    // 5) Degen Sprayer
+    else if ((runnerCount / globalRunnerCount) * 100 <= 1) {
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
+      wallet.badges.push('degen sprayer');
+    }
+    // 6) One-Hit Wonder
+    else if (runnerCount === 1) {
+      wallet.badges.push('one hit wonder');
+    }
+    // 7) Diamond Hands (multiple runners held past 'late')
+    else if (totalRunnersHeldPastLate(wallet.runners) >= 2) {
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
+      wallet.badges.push('diamond hands');
+    }
+    // 8) Whale Buyer
+    else if (
+      wallet.runners.some(runner =>
+        (runner.transactions.buy.some(b => b.amount * b.price >= 5000)) ||
+        (runner.transactions.sell.some(s => s.amount * s.price >= 5000))
+      )
+    ) {
+      wallet.badges.push('whale buyer');
+    }
+    // 9) Dead Wallet
+    else if (await checkIfDeadWallet(wallet.address)) {
+      wallet.badges.push('dead wallet');
+    }
+    // 10) Comeback Trader
+    else if (await checkIfComebackTrader(wallet.address)) {
+      wallet.badges = wallet.badges.filter(b => b !== 'dead wallet');
+      wallet.badges.push('comeback trader');
+    }
 
-    // Apply badges based on criteria (legendary, potential alpha, high conviction, etc.)
-    // (Badge logic from previous steps remains here - keeping it concise for example)
-    if (runnerCount >= 10) { wallet.badges.push('legendary buyer'); /* ... filter others */ }
-    else if (participationRate >= 5 && participationRate < 10) { wallet.badges.push('potential alpha'); /* ... filter others */ }
-    // ... other badge rules ...
-
-    if (totalRunnersHeldPastLate(wallet.runners) >= 2) { wallet.badges.push('diamond hands'); /* ... filter others */ }
-    if (wallet.runners.some(r => (r.transactions?.buy?.some(b => (b.amount||0)*(b.price||0)>=5000))||(r.transactions?.sell?.some(s => (s.amount||0)*(s.price||0)>=5000)))) { wallet.badges.push('whale buyer'); }
-
-    // Async Badges (Dead / Comeback)
-    const isDead = await checkIfDeadWallet(wallet.address);
-    let isComeback = false;
-    if (!isDead) isComeback = await checkIfComebackTrader(wallet.address);
-    if (isComeback) { wallet.badges = wallet.badges.filter(b => b !== 'dead wallet'); wallet.badges.push('comeback trader'); }
-    else if (isDead) { wallet.badges.push('dead wallet'); }
-
-    // Final Badge Cleanup
-    if (wallet.runners.length > 1) wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
+    if(wallet.runners.length > 1 && wallet.badges.some(b => b === 'one hit wonder')){
+      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
+    }
     wallet.badges = [...new Set(wallet.badges)];
     badged.push(wallet);
   }

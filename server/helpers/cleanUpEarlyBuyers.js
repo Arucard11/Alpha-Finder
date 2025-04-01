@@ -19,7 +19,7 @@
 
         // ✅ Delete wallets where all individual buys are < 50
         // ✅ Delete wallets where total buy volume < 50 AND has no sells
-        if (allBuysBelowThreshold || (totalBuys < 50 && !hasSells) || transactions.buy.length >= 15) {
+        if (allBuysBelowThreshold || (totalBuys < 50 && !hasSells) || transactions.buy.length >= 6){
             delete earlyBuyers[wallet];
         }
     }
