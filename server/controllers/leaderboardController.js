@@ -1,5 +1,5 @@
 const { getHighestConfidenceWallets, getWalletsDynamic } = require('../DB/querys.js');
-const filterTool = require('../helpers/filterTools.js');
+
 require("dotenv").config();
 const NodeCache = require('node-cache');
 

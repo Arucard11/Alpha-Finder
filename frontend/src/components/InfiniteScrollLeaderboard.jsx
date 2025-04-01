@@ -1,15 +1,12 @@
 // src/components/InfiniteScrollLeaderboard.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react'; // Import useCallback
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { Box, Typography, Button, Menu, MenuItem, Grid } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import WalletAccordion from './WalletAccordion'; // Assuming WalletAccordion now uses wallet.pnl
+import WalletAccordion from './WalletAccordion';
 
-// *** REMOVED: omitAllprices function is no longer needed ***
-// function omitAllprices(wallets) { ... }
-
-// Export conversions (remain the same, will now receive wallets potentially with allprices)
-// Ensure your export logic handles potentially large data if 'allprices' was significant.
+// Export functions (exportToCsv, exportToSql, exportToJson, downloadFile) remain the same...
+// ... (paste your existing export functions here) ...
 function exportToCsv(wallets) {
   const header = ['id', 'address', 'confidence_score', 'pnl', 'badges', 'runners_count'];
   const rows = wallets.map((w) => [
@@ -37,8 +34,6 @@ function exportToSql(wallets) {
 }
 
 function exportToJson(wallets) {
-  // JSON.stringify will handle the nested structures, including 'allprices' if present.
-  // Be mindful of potential large output size.
   return JSON.stringify(wallets, null, 2);
 }
 
@@ -52,24 +47,22 @@ function downloadFile(content, filename, mimeType) {
   URL.revokeObjectURL(url);
 }
 
+
 const InfiniteScrollLeaderboard = ({ type, filter }) => {
   const [wallets, setWallets] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false); // Add loading state for fetch calls
 
-  // Export dropdown
+  // Export dropdown state and handlers remain the same...
   const [anchorEl, setAnchorEl] = useState(null);
   const openMenu = Boolean(anchorEl);
-
   const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
 
-  // Export logic
-  const handleExport = (format) => {
-    // *** REMOVED: Call to omitAllprices ***
-    // const sanitizedData = omitAllprices(wallets);
-    // Now directly use the 'wallets' state
+  // Export logic (handleExport) remains the same...
+   const handleExport = (format) => {
     const dataToExport = wallets;
     let content = '';
     let mimeType = 'text/plain';
@@ -77,17 +70,17 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
 
     switch (format) {
       case 'excel':
-        content = exportToCsv(dataToExport); // Pass wallets directly
+        content = exportToCsv(dataToExport);
         mimeType = 'text/csv';
         fileName += '.csv';
         break;
       case 'sql':
-        content = exportToSql(dataToExport); // Pass wallets directly
+        content = exportToSql(dataToExport);
         mimeType = 'text/sql';
         fileName += '.sql';
         break;
       case 'json':
-        content = exportToJson(dataToExport); // Pass wallets directly
+        content = exportToJson(dataToExport);
         mimeType = 'application/json';
         fileName += '.json';
         break;
@@ -98,27 +91,42 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
     handleMenuClose();
   };
 
-  // Fetch wallets from the API
-  const fetchWallets = (currentOffset) => {
+
+  // Use useCallback to memoize fetchWallets, preventing unnecessary recreation
+  // especially important if passed directly to `next` prop without intermediate function
+  const fetchWallets = useCallback((currentOffset) => {
+    // Prevent fetching if already loading or if no more data
+    if (loading || !hasMore) {
+        console.log(`Fetch skipped: loading=${loading}, hasMore=${hasMore}`);
+        return;
+    }
+
+    setLoading(true); // Set loading true at the start of fetch
+    setError(null); // Clear previous errors on new fetch attempt
+
     let url = '';
     let body = {};
+    const limit = 20; // Example: Define how many items to fetch per request (adjust as needed)
 
     if (type === 'all-time') {
       url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/all-time`;
-      body = { offset: currentOffset };
+      // Send offset and potentially a limit if API supports it
+      body = { offset: currentOffset, limit: limit };
       if (filter) {
         body.sort = filter;
       }
     } else {
       url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/day`;
       const days = type === '7-day' ? 7 : type === '30-day' ? 30 : 90;
-      body = { days, offset: currentOffset };
+      // Send offset and potentially a limit if API supports it
+      body = { days, offset: currentOffset, limit: limit };
       if (filter) {
         body.sort = filter;
       }
     }
 
-    console.log("Fetching wallets with body:", body);
+    console.log(`Fetching wallets: type=${type}, filter=${filter}, offset=${currentOffset}, limit=${limit}`);
+    console.log("Request body:", body);
 
     fetch(url, {
       method: 'POST',
@@ -127,16 +135,12 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
     })
       .then((res) => {
         if (!res.ok) {
-           // Try to get error message from response body if possible
           return res.text().then(text => {
-            let errorMsg = `Network response was not ok: ${res.status} ${res.statusText}`;
+            let errorMsg = `API Error: ${res.status} ${res.statusText}`;
             try {
                 const jsonError = JSON.parse(text);
                 errorMsg = jsonError.message || jsonError.error || errorMsg;
-            } catch (e) {
-                // Ignore if response is not JSON
-                if(text) errorMsg = text; // Use text if available
-            }
+            } catch (e) { if(text) errorMsg = text; }
             throw new Error(errorMsg);
           });
         }
@@ -145,64 +149,67 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       .then((data) => {
         if (!Array.isArray(data)) {
              console.error("API did not return an array:", data);
-             setError("Invalid data format received from API.");
-             setHasMore(false);
-             return;
+             throw new Error("Invalid data format received from API.");
         }
-        if (data.length === 0) {
-          setHasMore(false);
-        } else {
-           // Filter out potential null/undefined entries and ensure 'id' exists
-           const newValidWallets = data.filter(w => w && w.id != null);
 
-          if (newValidWallets.length === 0 && data.length > 0) {
-              console.warn("Received data but none were valid wallets.");
-              // Decide if this should stop fetching or continue, depends on API behavior
-              // setHasMore(false); // Option: stop if only invalid data comes
-          }
+        // Filter out potential null/undefined entries and ensure 'id' exists
+        const newValidWallets = data.filter(w => w && w.id != null);
+        console.log(`Received ${data.length} items, ${newValidWallets.length} valid wallets.`);
 
-          setWallets((prev) => {
-            const combined = [...prev, ...newValidWallets];
-            // Deduplicate
-            const unique = combined.filter(
-              (w, idx, arr) => arr.findIndex((x) => x.id === w.id) === idx
-            );
+        // Update wallets state by appending new valid wallets and deduplicating
+        setWallets(prevWallets => {
+             const combined = [...prevWallets, ...newValidWallets];
+             const unique = combined.filter(
+               (w, idx, arr) => arr.findIndex((x) => x.id === w.id) === idx
+             );
+             console.log(`Total unique wallets after update: ${unique.length}`);
+             return unique;
+        });
 
-             // Check if new unique items were actually added
-             const newUniqueCount = unique.length - prev.length;
+        // Update offset for the *next* fetch
+        setOffset(currentOffset + newValidWallets.length);
 
-             if (newUniqueCount === 0 && newValidWallets.length > 0 && prev.length > 0) {
-                console.warn("Received duplicate data or no new unique wallets, potentially indicating end of list or API issue.");
-                setHasMore(false);
-             } else if (newValidWallets.length === 0 && data.length === 0){
-                setHasMore(false); // Explicitly stop if API returns empty array
-             } else {
-                // Only increment offset based on the number of *new unique* wallets added
-                // This provides a more accurate offset for the *next* fetch
-                setOffset(prevOffset => prevOffset + newUniqueCount);
-                // Ensure hasMore is true if we added wallets
-                if(newUniqueCount > 0) setHasMore(true);
-             }
-            return unique;
-          });
-        }
+        // Determine if there's more data
+        // Assumption: API returns an empty array or fewer items than requested limit when done.
+        const moreDataAvailable = newValidWallets.length === limit; // Adjust if API signals end differently
+        setHasMore(moreDataAvailable);
+        console.log(`More data available: ${moreDataAvailable}`);
+
       })
       .catch((err) => {
         console.error('Error fetching leaderboard data:', err);
-        setError(err.message || "An unknown error occurred."); // Provide default error message
-        setHasMore(false);
+        setError(err.message || "An unknown error occurred fetching data.");
+        setHasMore(false); // Stop fetching on error
+      })
+      .finally(() => {
+        setLoading(false); // Set loading false when fetch completes (success or error)
       });
-  };
+  // Add dependencies for useCallback
+  }, [type, filter, loading, hasMore]); // Include loading/hasMore to prevent stale closures
 
-  // Fetch on mount and when type or filter changes
+
+  // Effect for initial load and when type/filter changes
   useEffect(() => {
     console.log(`Effect triggered: type=${type}, filter=${filter}. Resetting state.`);
-    setWallets([]);
-    setOffset(0); // Reset offset to 0 for new fetch
-    setHasMore(true); // Assume there is more data initially
-    setError(null); // Clear previous errors
-    fetchWallets(0); // Fetch the first batch
-  }, [type, filter]);
+    setWallets([]);     // Clear existing wallets
+    setOffset(0);       // Reset offset to 0
+    setHasMore(true);   // Assume more data exists for the new filter/type
+    setError(null);     // Clear previous errors
+    setLoading(false);  // Reset loading state
+    // Fetch the first batch for the new settings
+    // Wrap fetchWallets(0) in a function to avoid direct call potentially causing issues
+    // Also ensures the loading state check inside fetchWallets works correctly for the initial load.
+    const initialFetch = () => fetchWallets(0);
+    initialFetch();
+
+    // Cleanup function (optional but good practice)
+    return () => {
+        console.log("Cleanup effect");
+        // Potentially cancel ongoing fetch requests here if needed
+    };
+  // Ensure fetchWallets is stable or included if it changes based on props/state outside its definition
+  }, [type, filter, fetchWallets]);
+
 
   return (
     // Outer container
@@ -212,16 +219,16 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
         justifyContent: 'center',
         alignItems: 'flex-start',
         width: '100%',
-        height: '90vh',
+        height: '90vh', // Make sure this height allows scrolling
         backgroundColor: '#1d1d1d',
-        overflow: 'auto',
+        overflow: 'auto', // This is crucial for scrolling
         boxShadow: '0px 0px 15px rgba(0,230,118,0.7)',
       }}
-      id="scrollableDiv"
+      id="scrollableDiv" // Target for InfiniteScroll
     >
       {/* Inner container */}
       <Box sx={{ width: '100%', maxWidth: '1400px', marginX: 'auto', padding: 2 }}>
-        {/* Top bar */}
+        {/* Top bar (Error display and Export Button) */}
         <Box
           sx={{
             display: 'flex',
@@ -231,53 +238,51 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
             minHeight: '40px',
           }}
         >
-          {/* Error display */}
           {error && (
             <Typography sx={{ color: 'red', flexGrow: 1, textAlign: 'left', mr: 2 }}>
               Error: {error}
             </Typography>
           )}
-          {/* Export Button */}
-           <Box sx={{ ml: error ? 0 : 'auto' }}>
-            <Button
+          <Box sx={{ ml: error ? 0 : 'auto' }}>
+             <Button
               variant="contained"
               onClick={handleMenuOpen}
               endIcon={<ArrowDropDownIcon />}
               sx={{ backgroundColor: '#00e676', color: '#121212', fontWeight: 'bold' }}
-            >
+             >
               Export
-            </Button>
-            <Menu anchorEl={anchorEl} open={openMenu} onClose={handleMenuClose}>
-              <MenuItem onClick={() => handleExport('excel')}>Excel (CSV)</MenuItem>
-              <MenuItem onClick={() => handleExport('sql')}>SQL</MenuItem>
-              <MenuItem onClick={() => handleExport('json')}>JSON</MenuItem>
-            </Menu>
+             </Button>
+             <Menu anchorEl={anchorEl} open={openMenu} onClose={handleMenuClose}>
+                <MenuItem onClick={() => handleExport('excel')}>Excel (CSV)</MenuItem>
+                <MenuItem onClick={() => handleExport('sql')}>SQL</MenuItem>
+                <MenuItem onClick={() => handleExport('json')}>JSON</MenuItem>
+             </Menu>
           </Box>
         </Box>
 
-        {/* Infinite scroll content */}
+        {/* Infinite scroll component */}
         <InfiniteScroll
-          dataLength={wallets.length}
-          next={() => {
-              console.log(`InfiniteScroll requesting next batch, current offset: ${offset}`);
-              fetchWallets(offset); // Use the current offset state
-          }}
-          hasMore={hasMore}
-          loader={<Typography sx={{ textAlign: 'center', color: 'grey.500', my: 2 }}>Loading...</Typography>}
-          endMessage={
+          dataLength={wallets.length} // Current number of items
+          next={() => fetchWallets(offset)} // Function to call for more data (use current offset)
+          hasMore={hasMore && !error} // Continue if hasMore is true AND no error occurred
+          loader={ // Display loader only when actively loading
+             loading && <Typography sx={{ textAlign: 'center', color: 'grey.500', my: 2 }}>Loading...</Typography>
+          }
+          endMessage={ // Message when hasMore becomes false
             <Typography sx={{ textAlign: 'center', color: 'grey.500', my: 2 }}>
-              {!error && wallets.length === 0 && !hasMore ? 'No wallets found.' : // Initial load, no results
-               !error && wallets.length > 0 && !hasMore ? `You've reached the end!` : // Loaded some, now at end
+              {!error && wallets.length === 0 && !hasMore ? 'No wallets found.' :
+               !error && wallets.length > 0 && !hasMore ? `You've reached the end!` :
                ''}
-               {/* Error message is displayed above */}
             </Typography>
           }
-          scrollableTarget="scrollableDiv"
+          scrollableTarget="scrollableDiv" // Matches the ID of the scrollable container
+          style={{ overflow: 'visible' }} // Prevent InfiniteScroll from adding its own scrollbars
         >
           {/* Grid layout */}
           <Grid container spacing={2}>
             {wallets.map((wallet) => (
               <Grid item xs={12} md={6} key={wallet.id}>
+                {/* Pass wallet data to the accordion */}
                 <WalletAccordion wallet={wallet} />
               </Grid>
             ))}
