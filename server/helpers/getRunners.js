@@ -1,6 +1,6 @@
 const getAth = require("./getATH.js")
 const getNewCoins = require("./getNewCoins.js")
-const {addFiltered,getAllFiltered,getAllRunnerAddresses,addRunner} = require("../DB/querys.js")
+const {addFiltered,getUncheckedRunners,getAllRunnerAddresses,addRunner} = require("../DB/querys.js")
 
 function getUniqueFromFirst(arr1, arr2) {
     return arr1.filter(coin => !arr2.some(address => address === coin.address));
@@ -29,7 +29,7 @@ async function getRunners(){
             }
         }
 
-        return (await getAllRunners()).filter(r => r.checked !== true)
+        return await getUncheckedRunners()
      
       
     }catch(e){

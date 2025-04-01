@@ -429,6 +429,45 @@ async function updateRunner(id, field, value) {
     }
   }
 
+  /**
+ * Queries the database to get all runners where the 'checked' property is false.
+ * @param {string} [tableName='runners'] - The name of the table containing runner data.
+ * @param {string} [checkedColumn='is_checked'] - The exact name of the boolean column indicating if a runner is checked.
+ * @returns {Promise<Array<object>>} A promise that resolves with an array of runner objects that are not checked.
+ * @throws {Error} Throws an error if the database query fails.
+ */
+async function getUncheckedRunners(tableName = 'runners', checkedColumn = 'checked') {
+  // *** IMPORTANT: Verify 'runners' and 'is_checked' are correct for your DB! ***
+
+  // Basic sanitization for the column name to prevent SQL injection vulnerabilities
+  // Allows only alphanumeric characters and underscores
+  const safeCheckedColumn = checkedColumn.replace(/[^a-zA-Z0-9_]/g, '');
+  if (safeCheckedColumn !== checkedColumn) {
+      // If sanitization removed characters, it might be an invalid/malicious name
+      console.error(`Invalid characters found in checked column name: ${checkedColumn}`);
+      throw new Error(`Invalid checked column name specified: ${checkedColumn}`);
+  }
+
+  // Construct the query using the sanitized column name.
+  // Assumes the column type is BOOLEAN. The value 'false' is a standard SQL boolean literal.
+  const queryText = `SELECT * FROM ${tableName} WHERE ${safeCheckedColumn} = false;`;
+
+  console.log(`Executing query to find unchecked runners: ${queryText}`); // Logging for debugging
+
+  try {
+      // Execute the query. No parameters ($1, $2...) are needed for this specific query
+      // because 'false' is a literal value, not user input requiring parameterization.
+      const result = await pool.query(queryText);
+
+      console.log(`Found ${result.rows.length} unchecked runners.`); // Log the count found
+      return result.rows; // Return the array of full runner objects
+
+  } catch (error) {
+      console.error(`Error fetching unchecked runners from table '${tableName}' where '${safeCheckedColumn}' is false:`, error);
+      // Re-throw the error so the calling function is aware of the failure
+      throw new Error(`Failed to get unchecked runners: ${error.message}`);
+  }
+}
 
   async function getAllRunnerAddresses(tableName = 'runners', addressColumn = 'address') {
     // *** IMPORTANT: Verify 'runners' and 'address' are correct for your DB! ***
@@ -526,6 +565,7 @@ async function deleteWhitelist(walletAddress) {
     updateWallet,
     getWalletByAddress,
     addRunner,
+    getUncheckedRunners,
     getTotalRunners,
     updateRunner,
     getAllRunnerAddresses,
