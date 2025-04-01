@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS wallets (
     address TEXT NOT NULL UNIQUE,
     runners JSONB NOT NULL,
     confidence_score NUMERIC,
+    pnl NUMERIC,
     badges TEXT[] NOT NULL DEFAULT '{}'
 );
 

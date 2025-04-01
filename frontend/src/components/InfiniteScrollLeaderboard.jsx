@@ -3,44 +3,21 @@ import React, { useState, useEffect } from 'react';
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { Box, Typography, Button, Menu, MenuItem, Grid } from '@mui/material';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import WalletAccordion from './WalletAccordion';
+import WalletAccordion from './WalletAccordion'; // Assuming WalletAccordion now uses wallet.pnl
 
-// Helper function to compute a runner's PnL
-const computePnl = (runner) => {
-  const buys = runner.transactions.buy || [];
-  const sells = runner.transactions.sell || [];
-  if (sells.length === 0) {
-    return 0;
-  }
-  const totalBuy = buys.reduce((sum, tx) => sum + tx.price * tx.amount, 0);
-  const totalSell = sells.reduce((sum, tx) => sum + tx.price * tx.amount, 0);
-  return totalSell - totalBuy;
-};
+// *** REMOVED: omitAllprices function is no longer needed ***
+// function omitAllprices(wallets) { ... }
 
-// Omit runner.timestamps.allprices
-function omitAllprices(wallets) {
-  return wallets.map((wallet) => {
-    const clonedWallet = { ...wallet };
-    if (clonedWallet.runners) {
-      clonedWallet.runners = clonedWallet.runners.map((runner) => {
-        const { timestamps, ...rest } = runner;
-        if (!timestamps) return runner;
-        const { allprices, ...timestampsNoAllprices } = timestamps;
-        return { ...rest, timestamps: timestampsNoAllprices };
-      });
-    }
-    return clonedWallet;
-  });
-}
-
-// Export conversions
+// Export conversions (remain the same, will now receive wallets potentially with allprices)
+// Ensure your export logic handles potentially large data if 'allprices' was significant.
 function exportToCsv(wallets) {
-  const header = ['id', 'address', 'confidence_score', 'badges', 'runners_count'];
+  const header = ['id', 'address', 'confidence_score', 'pnl', 'badges', 'runners_count'];
   const rows = wallets.map((w) => [
     w.id,
     w.address,
-    w.confidence_score,
-    w.badges.join(';'),
+    w.confidence_score ?? 'N/A',
+    w.pnl ?? 'N/A',
+    (w.badges || []).join(';'), // Add safety check for badges
     w.runners ? w.runners.length : 0,
   ]);
   return [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -50,14 +27,18 @@ function exportToSql(wallets) {
   let statements = [];
   wallets.forEach((w) => {
     const id = w.id;
-    const address = w.address.replace(/'/g, "''");
-    const conf = w.confidence_score || 0;
-    statements.push(`INSERT INTO wallets(id, address, confidence_score) VALUES (${id}, '${address}', ${conf});`);
+    const address = w.address ? w.address.replace(/'/g, "''") : ''; // Add safety check
+    const conf = w.confidence_score ?? 0;
+    const pnl = w.pnl ?? 0;
+    // Assuming a 'pnl' column exists in your wallets table
+    statements.push(`INSERT INTO wallets(id, address, confidence_score, pnl) VALUES (${id}, '${address}', ${conf}, ${pnl});`);
   });
   return statements.join('\n');
 }
 
 function exportToJson(wallets) {
+  // JSON.stringify will handle the nested structures, including 'allprices' if present.
+  // Be mindful of potential large output size.
   return JSON.stringify(wallets, null, 2);
 }
 
@@ -86,24 +67,27 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
 
   // Export logic
   const handleExport = (format) => {
-    const sanitizedData = omitAllprices(wallets);
+    // *** REMOVED: Call to omitAllprices ***
+    // const sanitizedData = omitAllprices(wallets);
+    // Now directly use the 'wallets' state
+    const dataToExport = wallets;
     let content = '';
     let mimeType = 'text/plain';
     let fileName = 'wallets';
 
     switch (format) {
       case 'excel':
-        content = exportToCsv(sanitizedData);
+        content = exportToCsv(dataToExport); // Pass wallets directly
         mimeType = 'text/csv';
         fileName += '.csv';
         break;
       case 'sql':
-        content = exportToSql(sanitizedData);
+        content = exportToSql(dataToExport); // Pass wallets directly
         mimeType = 'text/sql';
         fileName += '.sql';
         break;
       case 'json':
-        content = exportToJson(sanitizedData);
+        content = exportToJson(dataToExport); // Pass wallets directly
         mimeType = 'application/json';
         fileName += '.json';
         break;
@@ -122,17 +106,19 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
     if (type === 'all-time') {
       url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/all-time`;
       body = { offset: currentOffset };
-      if (filter !== 'pnl') {
+      if (filter) {
         body.sort = filter;
       }
     } else {
       url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/day`;
       const days = type === '7-day' ? 7 : type === '30-day' ? 30 : 90;
       body = { days, offset: currentOffset };
-      if (filter !== 'pnl') {
+      if (filter) {
         body.sort = filter;
       }
     }
+
+    console.log("Fetching wallets with body:", body);
 
     fetch(url, {
       method: 'POST',
@@ -141,52 +127,85 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
     })
       .then((res) => {
         if (!res.ok) {
-          throw new Error(`Network response was not ok: ${res.statusText}`);
+           // Try to get error message from response body if possible
+          return res.text().then(text => {
+            let errorMsg = `Network response was not ok: ${res.status} ${res.statusText}`;
+            try {
+                const jsonError = JSON.parse(text);
+                errorMsg = jsonError.message || jsonError.error || errorMsg;
+            } catch (e) {
+                // Ignore if response is not JSON
+                if(text) errorMsg = text; // Use text if available
+            }
+            throw new Error(errorMsg);
+          });
         }
         return res.json();
       })
       .then((data) => {
+        if (!Array.isArray(data)) {
+             console.error("API did not return an array:", data);
+             setError("Invalid data format received from API.");
+             setHasMore(false);
+             return;
+        }
         if (data.length === 0) {
           setHasMore(false);
         } else {
+           // Filter out potential null/undefined entries and ensure 'id' exists
+           const newValidWallets = data.filter(w => w && w.id != null);
+
+          if (newValidWallets.length === 0 && data.length > 0) {
+              console.warn("Received data but none were valid wallets.");
+              // Decide if this should stop fetching or continue, depends on API behavior
+              // setHasMore(false); // Option: stop if only invalid data comes
+          }
+
           setWallets((prev) => {
-            const combined = [...prev, ...data];
+            const combined = [...prev, ...newValidWallets];
             // Deduplicate
             const unique = combined.filter(
               (w, idx, arr) => arr.findIndex((x) => x.id === w.id) === idx
             );
-            if (unique.length === prev.length) {
-              setHasMore(false);
-            }
+
+             // Check if new unique items were actually added
+             const newUniqueCount = unique.length - prev.length;
+
+             if (newUniqueCount === 0 && newValidWallets.length > 0 && prev.length > 0) {
+                console.warn("Received duplicate data or no new unique wallets, potentially indicating end of list or API issue.");
+                setHasMore(false);
+             } else if (newValidWallets.length === 0 && data.length === 0){
+                setHasMore(false); // Explicitly stop if API returns empty array
+             } else {
+                // Only increment offset based on the number of *new unique* wallets added
+                // This provides a more accurate offset for the *next* fetch
+                setOffset(prevOffset => prevOffset + newUniqueCount);
+                // Ensure hasMore is true if we added wallets
+                if(newUniqueCount > 0) setHasMore(true);
+             }
             return unique;
           });
-          setOffset(currentOffset + data.length);
         }
       })
       .catch((err) => {
         console.error('Error fetching leaderboard data:', err);
-        setError(err.message);
+        setError(err.message || "An unknown error occurred."); // Provide default error message
         setHasMore(false);
       });
   };
 
-  // Fetch on mount
+  // Fetch on mount and when type or filter changes
   useEffect(() => {
-    fetchWallets(0);
-  }, []);
-
-  // Local sort for "pnl"
-  let sortedWallets = wallets;
-  if (filter === 'pnl') {
-    sortedWallets = [...wallets].sort((a, b) => {
-      const aPnl = a.runners.reduce((acc, r) => acc + computePnl(r), 0);
-      const bPnl = b.runners.reduce((acc, r) => acc + computePnl(r), 0);
-      return bPnl - aPnl;
-    });
-  }
+    console.log(`Effect triggered: type=${type}, filter=${filter}. Resetting state.`);
+    setWallets([]);
+    setOffset(0); // Reset offset to 0 for new fetch
+    setHasMore(true); // Assume there is more data initially
+    setError(null); // Clear previous errors
+    fetchWallets(0); // Fetch the first batch
+  }, [type, filter]);
 
   return (
-    // Outer container: fill screen, center content horizontally with flex
+    // Outer container
     <Box
       sx={{
         display: 'flex',
@@ -200,23 +219,26 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       }}
       id="scrollableDiv"
     >
-      {/* Inner box with max width, so content is truly centered */}
+      {/* Inner container */}
       <Box sx={{ width: '100%', maxWidth: '1400px', marginX: 'auto', padding: 2 }}>
-        {/* Top bar: error + export dropdown */}
+        {/* Top bar */}
         <Box
           sx={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             mb: 2,
+            minHeight: '40px',
           }}
         >
+          {/* Error display */}
           {error && (
-            <Typography sx={{ color: 'red', textAlign: 'center' }}>
-              {error}
+            <Typography sx={{ color: 'red', flexGrow: 1, textAlign: 'left', mr: 2 }}>
+              Error: {error}
             </Typography>
           )}
-          <Box>
+          {/* Export Button */}
+           <Box sx={{ ml: error ? 0 : 'auto' }}>
             <Button
               variant="contained"
               onClick={handleMenuOpen}
@@ -235,17 +257,28 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
 
         {/* Infinite scroll content */}
         <InfiniteScroll
-          dataLength={sortedWallets.length}
-          next={() => fetchWallets(offset)}
+          dataLength={wallets.length}
+          next={() => {
+              console.log(`InfiniteScroll requesting next batch, current offset: ${offset}`);
+              fetchWallets(offset); // Use the current offset state
+          }}
           hasMore={hasMore}
-          loader={<Typography>Loading...</Typography>}
+          loader={<Typography sx={{ textAlign: 'center', color: 'grey.500', my: 2 }}>Loading...</Typography>}
+          endMessage={
+            <Typography sx={{ textAlign: 'center', color: 'grey.500', my: 2 }}>
+              {!error && wallets.length === 0 && !hasMore ? 'No wallets found.' : // Initial load, no results
+               !error && wallets.length > 0 && !hasMore ? `You've reached the end!` : // Loaded some, now at end
+               ''}
+               {/* Error message is displayed above */}
+            </Typography>
+          }
           scrollableTarget="scrollableDiv"
         >
-          {/* 2-column layout on md+, single column on small screens */}
+          {/* Grid layout */}
           <Grid container spacing={2}>
-            {sortedWallets.map((wallet) => (
+            {wallets.map((wallet) => (
               <Grid item xs={12} md={6} key={wallet.id}>
-                <WalletAccordion wallet={wallet} computePnl={computePnl} />
+                <WalletAccordion wallet={wallet} />
               </Grid>
             ))}
           </Grid>

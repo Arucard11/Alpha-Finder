@@ -16,7 +16,7 @@ import RunnerAccordion from './RunnerAccordion';
 
 const badgeEmojis = {
   'legendary buyer': '🏆',
-  'high-conviction buyer': '💼',
+  'high conviction': '💼',
   'potential alpha': '🚀',
   'mid trader': '📈',
   'degen sprayer': '🤪',

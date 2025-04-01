@@ -29,7 +29,7 @@ function sanitizeString(input) {
  * @returns {Promise<Object>} The inserted wallet record.
  */
 async function addWallet(data) {
-  const { address, runners, confidence_score, badges } = data;
+  const { address, runners, confidence_score, badges, pnl } = data;
 
   const sanitizedAddress = sanitizeString(address);
   if (!Array.isArray(runners)) {
@@ -44,8 +44,8 @@ async function addWallet(data) {
   const sanitizedBadges = badges.map(sanitizeString);
 
   const query = `
-    INSERT INTO wallets (address, runners, confidence_score, badges)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO wallets (address, runners, confidence_score, badges, pnl)
+    VALUES ($1, $2, $3, $4, $5)
     RETURNING *;
   `;
   try {
@@ -54,6 +54,7 @@ async function addWallet(data) {
       JSON.stringify(runners),
       confidence_score,
       sanitizedBadges,
+      pnl
     ]);
     return result.rows[0];
   } catch (err) {
@@ -70,38 +71,11 @@ async function addWallet(data) {
  * @returns {Promise<Object>} The updated wallet record.
  */
 async function updateWallet(id, field, value) {
-  if (typeof id !== 'number') {
-    throw new Error('ID must be a number.');
-  }
-
-  // Allowed fields to update
-  const allowedFields = ['address', 'runners', 'confidence_score', 'badges'];
-  if (!allowedFields.includes(field)) {
-    throw new Error(`Invalid field. Allowed fields are: ${allowedFields.join(', ')}`);
-  }
-
-  let sanitizedValue = value;
-  if (field === 'address') {
-    sanitizedValue = sanitizeString(value);
-  } else if (field === 'runners') {
-    if (!Array.isArray(value)) {
-      throw new Error('runners must be an array of objects.');
-    }
-    sanitizedValue = JSON.stringify(value);
-  } else if (field === 'confidence_score') {
-    if (typeof value !== 'number') {
-      throw new Error('confidence_score must be a number.');
-    }
-  } else if (field === 'badges') {
-    if (!Array.isArray(value)) {
-      throw new Error('badges must be an array of strings.');
-    }
-    sanitizedValue = value.map(sanitizeString);
-  }
+  
 
   const query = `UPDATE wallets SET ${field} = $1 WHERE id = $2 RETURNING *;`;
   try {
-    const result = await pool.query(query, [sanitizedValue, id]);
+    const result = await pool.query(query, [value, id]);
     return result.rows[0];
   } catch (err) {
     console.error('Error updating wallet:', err);
@@ -174,59 +148,108 @@ async function getHighestConfidenceWallets(offset) {
  * @param {string} [sortBy] - Sorting criteria: 'confidence' or 'runners'.
  * @returns {Promise<Array>} - Array of wallet objects.
  */
+/**
+ * Fetches wallets dynamically based on recent activity, with different sorting options.
+ * Added PnL sorting: Tuesday, April 1, 2025 at 7:17:30 AM UTC
+ */
 async function getWalletsDynamic(days, offset, sortBy) {
-  const unixTimeThreshold = Math.floor(Date.now() / 1000) - days * 86400;
-  const limit = 50;
-  let query;
-  let params = [unixTimeThreshold, limit, offset];
+  // Calculate the timestamp threshold based on the number of days ago
+  const unixTimeThreshold = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60); // More explicit calculation
+  const limit = 50; // Define the pagination limit
+  let query; // Variable to hold the SQL query
+  let params = [unixTimeThreshold, limit, offset]; // Parameters for the SQL query
 
-  console.log('Unix Time Threshold:', unixTimeThreshold);
+  // Log the parameters being used for debugging
+  console.log(`getWalletsDynamic called with: days=${days}, offset=${offset}, sortBy=${sortBy}, threshold=${unixTimeThreshold}`);
+
+  // --- Determine the SQL Query based on sortBy parameter ---
 
   if (sortBy === 'runners') {
+    // Sort by the count of runners having recent buy activity
+    console.log("Constructing query to sort by runners count...");
     query = `
-      SELECT w.*,
+      SELECT
+        w.*,
+        -- Subquery to count runners with at least one buy transaction after the threshold
         (
           SELECT COUNT(*)
           FROM jsonb_array_elements(w.runners) AS runner
           WHERE EXISTS (
             SELECT 1
             FROM jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-            WHERE (buyTx->>'timestamp')::BIGINT >= $1
+            WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
           )
-        ) AS matching_runners
+        ) AS matching_runners_count -- Alias for the calculated count
       FROM wallets w
+      -- Filter wallets to include only those with at least one recent buy transaction overall
       WHERE EXISTS (
         SELECT 1
         FROM jsonb_array_elements(w.runners) AS runner,
              jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-        WHERE (buyTx->>'timestamp')::BIGINT >= $1
+        WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
       )
-      ORDER BY matching_runners DESC, confidence_score DESC, id ASC
-      LIMIT $2 OFFSET $3;
+      -- Order by the calculated runner count (desc), then confidence score (desc), then ID (asc) for tie-breaking
+      ORDER BY matching_runners_count DESC, confidence_score DESC, id ASC
+      LIMIT $2 OFFSET $3; -- $2 = limit, $3 = offset
     `;
-  } else {
+    // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
+
+  } else if (sortBy === 'pnl') {
+    // Sort by the pre-calculated PnL field
+    console.log("Constructing query to sort by PnL...");
     query = `
-      SELECT *
-      FROM wallets
+      SELECT * -- Select all columns from the wallets table
+      FROM wallets w
+      -- Filter wallets to include only those with at least one recent buy transaction
       WHERE EXISTS (
         SELECT 1
-        FROM jsonb_array_elements(runners) AS runner,
+        FROM jsonb_array_elements(w.runners) AS runner,
              jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-        WHERE (buyTx->>'timestamp')::BIGINT >= $1
+        WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
       )
-      ORDER BY confidence_score DESC, id ASC
-      LIMIT $2 OFFSET $3;
+      -- Order by PnL (desc), then confidence score (desc), then ID (asc) for tie-breaking
+      -- Use NULLS LAST in case the pnl field hasn't been populated for some wallets yet
+      ORDER BY pnl DESC NULLS LAST, confidence_score DESC, id ASC
+      LIMIT $2 OFFSET $3; -- $2 = limit, $3 = offset
     `;
+    // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
+
+  } else {
+    // Default sort: primarily by confidence_score
+    console.log("Constructing query to sort by default (confidence_score)...");
+    query = `
+      SELECT * -- Select all columns from the wallets table
+      FROM wallets w
+      -- Filter wallets to include only those with at least one recent buy transaction
+      WHERE EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(w.runners) AS runner,
+             jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
+        WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
+      )
+      -- Order by confidence score (desc), then ID (asc) for tie-breaking
+      ORDER BY confidence_score DESC, id ASC
+      LIMIT $2 OFFSET $3; -- $2 = limit, $3 = offset
+    `;
+    // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
   }
 
+  // Log the final query before execution
   console.log('Executing Query:', query);
+  console.log('With Params:', params);
 
   try {
+    // Execute the determined query using the connection pool
     const result = await pool.query(query, params);
+    // Return the fetched rows
+    console.log(`Query successful, returning ${result.rows.length} rows.`);
     return result.rows;
   } catch (error) {
-    console.error('Error in getWalletsDynamic:', error);
-    throw error;
+    // Log any errors during query execution and re-throw
+    console.error('Error executing query in getWalletsDynamic:', error);
+    console.error('Failed Query:', query); // Log the query that failed
+    console.error('Failed Params:', params); // Log the params used
+    throw error; // Propagate the error up
   }
 }
 

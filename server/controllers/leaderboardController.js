@@ -16,7 +16,7 @@ exports.getAllTimeLeaderboard = async (req, res) => {
     // Check if the data exists in the cache
     if (cache.has(cacheKey)) {
       console.log("Cache hit for all-time leaderboard");
-      return res.json(cache.get(cacheKey).slice(offset,20));
+      return res.json(cache.get(cacheKey).slice(offset,50));
     }
 
     // If not in cache, fetch data from the database
@@ -29,7 +29,7 @@ exports.getAllTimeLeaderboard = async (req, res) => {
     // Cache the result for future requests
     cache.set(cacheKey, topWallets);
 
-    res.json(topWallets.slice(offset,20));
+    res.json(topWallets.slice(offset,50));
   } catch (error) {
     console.error('Error fetching all-time leaderboard:', error);
     res.status(500).end()
@@ -46,7 +46,7 @@ exports.getDayLeaderboard = async (req, res) => {
     // Check if the data exists in the cache
     if (cache.has(cacheKey)) {
       console.log("Cache hit for day leaderboard");
-      return res.json(cache.get(cacheKey).slice(offset,20));
+      return res.json(cache.get(cacheKey).slice(offset,50));
     }
 
     // If not in cache, fetch data from the database
