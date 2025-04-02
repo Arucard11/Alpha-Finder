@@ -1,29 +1,135 @@
- function cleanUpEarlyBuyers(earlyBuyers) {
+// Configuration for sandwich bot detection (keep this accessible)
+const sandwichConfig = {
+    minTotalTransactions: 4,
+    timeThresholdSeconds: 60,
+    amountThresholdPercent: 0.30,
+    minSandwichPairs: 2
+};
+
+/**
+ * Helper function to detect potential sandwich bot behavior for a specific set of transactions.
+ * NOTE: Modified slightly to accept 'transactions' object directly instead of a full 'runner'
+ */
+function isPotentialSandwichPattern(transactions, config) {
+    // Directly use the passed 'transactions' object
+    const buys = transactions?.buy || [];
+    const sells = transactions?.sell || [];
+    const totalTransactions = buys.length + sells.length;
+
+    if (totalTransactions < config.minTotalTransactions) return false;
+
+    // --- Calculate USD value and combine/sort transactions ---
+    // Important: Ensure your buy/sell transaction objects have 'amount', 'price', and 'timestamp'
+    const allTxns = [
+        ...buys.map(tx => ({
+            ...tx,
+            type: 'buy',
+            // Ensure default values if amount/price might be missing/null/undefined
+            usd_value: (tx.amount || 0) * (tx.price || 0),
+            timestamp: tx.timestamp
+        })),
+        ...sells.map(tx => ({
+            ...tx,
+            type: 'sell',
+            usd_value: (tx.amount || 0) * (tx.price || 0),
+            timestamp: tx.timestamp
+        }))
+    ];
+
+    // Filter out transactions without a valid timestamp
+    const validTxns = allTxns.filter(tx => typeof tx.timestamp === 'number' && !isNaN(tx.timestamp) && tx.timestamp > 0);
+    if (validTxns.length < config.minTotalTransactions) return false; // Re-check after filtering invalid timestamps
+
+    validTxns.sort((a, b) => a.timestamp - b.timestamp);
+
+    // --- Logic to find sandwich pairs (same as before) ---
+    let sandwichPairCount = 0;
+    for (let i = 0; i < validTxns.length - 1; i++) {
+        const currentTx = validTxns[i];
+        const nextTx = validTxns[i + 1];
+
+        // Must be alternating types
+        if (currentTx.type === nextTx.type) continue;
+
+        const timeDiff = nextTx.timestamp - currentTx.timestamp;
+        // Must be within time threshold (and positive)
+        if (timeDiff <= 0 || timeDiff > config.timeThresholdSeconds) continue;
+
+        // Must have comparable, positive USD values
+        if (currentTx.usd_value > 0 && nextTx.usd_value > 0) {
+            const absValueDiff = Math.abs(nextTx.usd_value - currentTx.usd_value);
+            const relativeDiff = absValueDiff / currentTx.usd_value;
+            // Must be within amount threshold
+            if (relativeDiff > config.amountThresholdPercent) continue;
+        } else {
+            // If one or both values are zero or negative, they aren't a comparable pair for this logic
+             continue;
+        }
+
+        // If all checks pass, it's a potential sandwich pair component
+        sandwichPairCount++;
+
+        // Optimization: If we've found enough pairs, we can stop early
+        if (sandwichPairCount >= config.minSandwichPairs) return true;
+    }
+
+    // Return true only if the minimum number of pairs was found
+    return sandwichPairCount >= config.minSandwichPairs;
+}
+
+
+/**
+ * Cleans up early buyers based on several criteria, including potential sandwich activity.
+ */
+function cleanUpEarlyBuyers(earlyBuyers) {
+    const walletsToDelete = []; // Keep track of wallets to delete
+
     for (let [wallet, transactions] of Object.entries(earlyBuyers)) {
         if (wallet === "mintInfo") continue; // Skip mint info
 
-        // If there are no buys, remove the wallet
+        // Check 1: No buys
         if (!transactions.buy || transactions.buy.length === 0) {
-            delete earlyBuyers[wallet];
-            continue;
+            walletsToDelete.push(wallet);
+            continue; // Move to next wallet
         }
 
-        // Check if all individual buys are < 50
-        const allBuysBelowThreshold = transactions.buy.every(tx => (tx.amount * tx.price) < 5);
+        // Check 2: All individual buys are < $5
+        // Ensure amount and price exist before multiplying
+        const allBuysBelowThreshold = transactions.buy.every(tx => ((tx.amount || 0) * (tx.price || 0)) < 5);
+        if (allBuysBelowThreshold) {
+            walletsToDelete.push(wallet);
+            continue; // Move to next wallet
+        }
 
-        // Calculate total buy volume
-        const totalBuys = transactions.buy.reduce((acc, curr) => acc + (curr.amount * curr.price), 0);
-
-        // Check if there are any sells
+        // Check 3: Total buy volume < $50 AND no sells
+        const totalBuys = transactions.buy.reduce((acc, curr) => acc + ((curr.amount || 0) * (curr.price || 0)), 0);
         const hasSells = transactions.sell && transactions.sell.length > 0;
+        if (totalBuys < 50 && !hasSells) {
+            walletsToDelete.push(wallet);
+            continue; // Move to next wallet
+        }
 
-        // ✅ Delete wallets where all individual buys are < 50
-        // ✅ Delete wallets where total buy volume < 50 AND has no sells
-        if (allBuysBelowThreshold || (totalBuys < 50 && !hasSells) || transactions.buy.length >= 6){
-            delete earlyBuyers[wallet];
+        // Check 4: Buy count >= 6 (Original condition)
+        if (transactions.buy.length >= 6) {
+             walletsToDelete.push(wallet);
+             continue; // Move to next wallet
+        }
+
+        // Check 5: Potential Sandwich Bot Pattern Detected
+        // Pass the 'transactions' object directly
+        if (isPotentialSandwichPattern(transactions, sandwichConfig)) {
+            console.log(`Flagging wallet ${wallet} for deletion due to potential sandwich pattern.`); // Optional logging
+            walletsToDelete.push(wallet);
+            continue; // Move to next wallet
         }
     }
 
+    // Delete the flagged wallets from the original object
+    for (const wallet of walletsToDelete) {
+        delete earlyBuyers[wallet];
+    }
+
+    console.log(`Cleanup complete. Removed ${walletsToDelete.length} wallets.`);
     return earlyBuyers;
 }
 

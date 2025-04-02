@@ -110,6 +110,45 @@ async function updateWallet(id, field, value) {
   }
 }
 
+
+/**
+ * Deletes a wallet from the database based on its ID.
+ * @param {number | string} walletId - The unique ID of the wallet to delete.
+ * @returns {Promise<number>} A promise that resolves with the number of rows deleted (0 or 1).
+ * @throws {Error} Throws an error if the database query fails.
+ */
+async function deleteWalletById(walletId) {
+  // *** IMPORTANT: Verify 'wallets' is the correct table name! ***
+  const tableName = 'wallets';
+  // *** IMPORTANT: Verify 'id' is the correct primary key column name! ***
+  const idColumn = 'id';
+
+  const queryText = `DELETE FROM ${tableName} WHERE ${idColumn} = $1;`;
+  const params = [walletId]; // The value to substitute for $1
+
+  console.log(`Attempting to delete wallet with ${idColumn}=${walletId} from table '${tableName}'...`);
+  console.log(`Executing Query: ${queryText}`);
+  console.log(`With Params: ${JSON.stringify(params)}`);
+
+
+  try {
+    // Execute the query using the connection pool
+    const result = await pool.query(queryText, params);
+
+    // result.rowCount contains the number of rows affected by the DELETE statement.
+    console.log(`Delete successful. Rows affected: ${result.rowCount}`);
+
+    // If the ID existed, rowCount will be 1. If not found, it will be 0.
+    return result.rowCount;
+
+  } catch (error) {
+    console.error(`Error deleting wallet with ${idColumn}=${walletId} from table '${tableName}':`, error);
+    // Re-throw the error so the calling function knows something went wrong
+    throw new Error(`Failed to delete wallet (ID: ${walletId}): ${error.message}`);
+  }
+}
+
+
 /**
  * Fetch a wallet by its address.
  * @param {string} address - The wallet address.
@@ -592,6 +631,7 @@ async function deleteWhitelist(walletAddress) {
     updateWallet,
     getWalletByAddress,
     addRunner,
+    deleteWalletById,
     getUncheckedRunners,
     getTotalRunners,
     updateRunner,

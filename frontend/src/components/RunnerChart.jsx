@@ -237,33 +237,21 @@ const RunnerChart = ({ runner }) => {
         }}
       >
         <div style={{ marginBottom: '4px' }}>
-          <strong style={{ color: '#ffffff' }}>Buy Transactions:</strong>
+          <strong style={{ color: '#ffffff' }}>All Transactions:</strong>
         </div>
-        {runner.transactions.buy.map((tx, idx) => (
+        {[...runner.transactions.buy.map(tx => ({ ...tx, type: 'buy' })),
+          ...runner.transactions.sell.map(tx => ({ ...tx, type: 'sell' }))]
+          .sort((a, b) => a.timestamp - b.timestamp)
+          .map((tx, idx) => (
           <div
-            key={`buy-${idx}`}
+            key={`transaction-${idx}`}
             style={{
-              color: 'green',
+              color: tx.type === 'buy' ? 'green' : 'red',
               fontSize: '0.75rem',
               marginBottom: '2px',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(0)}
-          </div>
-        ))}
-        <div style={{ marginTop: '4px', marginBottom: '4px' }}>
-          <strong style={{ color: '#ffffff' }}>Sell Transactions:</strong>
-        </div>
-        {runner.transactions.sell.map((tx, idx) => (
-          <div
-            key={`sell-${idx}`}
-            style={{
-              color: 'red',
-              fontSize: '0.75rem',
-              marginBottom: '2px',
-            }}
-          >
-            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(0)}
+            {new Date(tx.timestamp * 1000).toLocaleString()} - {tx.type === 'buy' ? 'Buy' : 'Sell'} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(0)}
           </div>
         ))}
       </div>
