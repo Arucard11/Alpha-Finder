@@ -248,7 +248,7 @@ const RunnerChart = ({ runner }) => {
               marginBottom: '2px',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(5)}
+            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(0)}
           </div>
         ))}
         <div style={{ marginTop: '4px', marginBottom: '4px' }}>
@@ -263,7 +263,7 @@ const RunnerChart = ({ runner }) => {
               marginBottom: '2px',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(5)}
+            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(0)}
           </div>
         ))}
       </div>
