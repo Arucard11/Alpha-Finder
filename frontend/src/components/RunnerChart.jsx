@@ -174,7 +174,11 @@ const RunnerChart = ({ runner }) => {
         ticks: {
           autoSkip: true,
           maxRotation: 45,
-          color: '#ffffff'
+          color: '#ffffff',
+          maxTicksLimit: 10 // Add this to limit the number of ticks
+        },
+        grid: {
+          color: 'rgba(255, 255, 255, 0.1)' // Add this to make grid lines visible
         }
       },
       y: {
@@ -244,13 +248,7 @@ const RunnerChart = ({ runner }) => {
               marginBottom: '2px',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: {tx.price.toLocaleString('en-US', {
-              style: 'currency',
-              currency: 'USD',
-            })} - Total: {(tx.price * tx.amount).toLocaleString('en-US', {
-              style: 'currency',
-              currency: 'USD',
-            })}
+            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(5)}
           </div>
         ))}
         <div style={{ marginTop: '4px', marginBottom: '4px' }}>
@@ -265,13 +263,7 @@ const RunnerChart = ({ runner }) => {
               marginBottom: '2px',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: {tx.price.toLocaleString('en-US', {
-              style: 'currency',
-              currency: 'USD',
-            })} - Total: {(tx.price * tx.amount).toLocaleString('en-US', {
-              style: 'currency',
-              currency: 'USD',
-            })}
+            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(5)}
           </div>
         ))}
       </div>
