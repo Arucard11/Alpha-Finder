@@ -18,6 +18,34 @@ const RunnerAccordion = ({ runner }) => {
   const [loadingChart, setLoadingChart] = useState(false);
   const [chartError, setChartError] = useState(null);
 
+  // Add PNL calculation function
+  const calculatePnL = (transactions) => {
+    if (!transactions || !transactions.buy || !transactions.sell) {
+      return { totalPnL: 0, percentagePnL: 0 };
+    }
+
+    let totalCost = 0;
+    let totalRevenue = 0;
+
+    // Calculate total cost from buy transactions
+    transactions.buy.forEach(tx => {
+      totalCost += tx.price * tx.amount;
+    });
+
+    // Calculate total revenue from sell transactions
+    transactions.sell.forEach(tx => {
+      totalRevenue += tx.price * tx.amount;
+    });
+
+    const totalPnL = totalRevenue - totalCost;
+    const percentagePnL = totalCost > 0 ? ((totalRevenue - totalCost) / totalCost) * 100 : 0;
+
+    return { totalPnL, percentagePnL };
+  };
+
+  // Calculate PNL for this runner
+  const { totalPnL, percentagePnL } = calculatePnL(runner?.transactions);
+
   // Ensure runner and runner.address exist before fetching
   const canFetchChart = runner && runner.address;
 
@@ -75,8 +103,14 @@ const RunnerAccordion = ({ runner }) => {
          expandIcon={canFetchChart ? <ExpandMoreIcon sx={{ color: '#00e676' }} /> : null}
          sx={!canFetchChart ? { opacity: 0.6, cursor: 'default' } : {}} // Style disabled state
       >
-        <Typography variant="body1" sx={{ color: '#fff' }}>
+        <Typography variant="body1" sx={{ color: '#fff', display: 'flex', alignItems: 'center', gap: 2 }}>
           Runner: {runnerName} ({runnerSymbol}) - Score: {runnerScore.toFixed(2)}
+          <span style={{ 
+            color: totalPnL >= 0 ? '#00e676' : '#ff1744',
+            marginLeft: '12px'
+          }}>
+            PnL: ${totalPnL.toFixed(2)} ({percentagePnL.toFixed(2)}%)
+          </span>
           {!canFetchChart && " (Data Unavailable)"}
         </Typography>
       </AccordionSummary>
