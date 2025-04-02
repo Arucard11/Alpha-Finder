@@ -41,7 +41,7 @@ async function addWallet(data) {
   if (!Array.isArray(badges)) {
     throw new Error('badges must be an array of strings.');
   }
-  const sanitizedBadges = badges.map(sanitizeString);
+ 
 
   const query = `
     INSERT INTO wallets (address, runners, confidence_score, badges, pnl)
@@ -53,7 +53,7 @@ async function addWallet(data) {
       sanitizedAddress,
       JSON.stringify(runners),
       confidence_score,
-      sanitizedBadges,
+      badges,
       pnl
     ]);
     return result.rows[0];
@@ -71,14 +71,41 @@ async function addWallet(data) {
  * @returns {Promise<Object>} The updated wallet record.
  */
 async function updateWallet(id, field, value) {
-  
+  if (typeof id !== 'number') {
+    throw new Error('ID must be a number.');
+  }
+
+  // Allowed fields to update
+  const allowedFields = ['address', 'runners', 'confidence_score', 'badges', 'pnl'];
+  if (!allowedFields.includes(field)) {
+    throw new Error(`Invalid field. Allowed fields are: ${allowedFields.join(', ')}`);
+  }
+
+  let sanitizedValue = value;
+  if (field === 'address') {
+    sanitizedValue = sanitizeString(value);
+  } else if (field === 'runners') {
+    if (!Array.isArray(value)) {
+      throw new Error('runners must be an array of objects.');
+    }
+    sanitizedValue = JSON.stringify(value);
+  } else if (field === 'confidence_score') {
+    if (typeof value !== 'number') {
+      throw new Error('confidence_score must be a number.');
+    }
+  } else if (field === 'badges') {
+    if (!Array.isArray(value)) {
+      throw new Error('badges must be an array of strings.');
+    }
+    sanitizedValue = value
+  }
 
   const query = `UPDATE wallets SET ${field} = $1 WHERE id = $2 RETURNING *;`;
   try {
-    const result = await pool.query(query, [value, id]);
+    const result = await pool.query(query, [sanitizedValue, id]);
     return result.rows[0];
   } catch (err) {
-    console.error(`Error updating wallet with this value:${value} for this field ${field}`, err, );
+    console.error('Error updating wallet:', err);
     throw err;
   }
 }
