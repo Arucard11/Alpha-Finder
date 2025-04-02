@@ -1,5 +1,6 @@
 // PnL Calculation Added: Tuesday, April 1, 2025 at 7:11:03 AM UTC
-
+const dotenv = require("dotenv")
+dotenv.config()
 const { getTotalRunners, updateWallet, addWallet } = require('../DB/querys.js');
 const { connection } = require('./connection.js');
 const { PublicKey } = require('@solana/web3.js');
@@ -258,6 +259,11 @@ function computeEarlyExitPenalty(runner) {
  */
 async function scoreWallets(convertedWallets) {
   let badged = [];
+  const options = {
+    method: 'GET',
+    headers: {accept: 'application/json', 'x-chain': 'solana', 'X-API-KEY': `${process.env.BIRDEYE_API_KEY}`},
+  };
+  
 
   console.log(`Starting scoring for ${convertedWallets.length} wallets...`);
 
@@ -266,7 +272,12 @@ async function scoreWallets(convertedWallets) {
   // =====================
   for (const wallet of convertedWallets) {
     const runnerCount = wallet.runners.length;
-    const globalRunnerCount = await getTotalRunners();
+    let globalRunnerCount
+    try{
+       globalRunnerCount = (await (await fetch(`https://public-api.birdeye.so/v1/wallet/token_list?wallet=${wallet.address}`, options)).json())?.data?.items?.length || 100
+    }catch(e){
+        console.error("Error in wallet loop: ", e)
+    }
     
     // First, clear any existing badges that shouldn't persist
     wallet.badges = wallet.badges || [];
