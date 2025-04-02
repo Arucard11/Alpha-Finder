@@ -161,13 +161,27 @@ const RunnerChart = ({ runner }) => {
     scales: {
       x: {
         type: 'time',
-        time: { tooltipFormat: 'Pp' },
+        time: {
+          tooltipFormat: 'Pp',
+          unit: 'day',
+          displayFormats: {
+            day: 'MMM dd, yyyy'
+          }
+        },
         title: { display: true, text: 'Time' },
         min: startDate,
-        max: endDate
+        max: endDate,
+        ticks: {
+          autoSkip: true,
+          maxRotation: 45,
+          color: '#ffffff'
+        }
       },
       y: {
         title: { display: true, text: 'Price' },
+        ticks: {
+          color: '#ffffff'
+        }
       },
     },
     plugins: {
@@ -230,8 +244,10 @@ const RunnerChart = ({ runner }) => {
               marginBottom: '2px',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} -{' '}
-            {(tx.price * tx.amount).toLocaleString('en-US', {
+            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: {tx.price.toLocaleString('en-US', {
+              style: 'currency',
+              currency: 'USD',
+            })} - Total: {(tx.price * tx.amount).toLocaleString('en-US', {
               style: 'currency',
               currency: 'USD',
             })}
@@ -249,8 +265,10 @@ const RunnerChart = ({ runner }) => {
               marginBottom: '2px',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} -{' '}
-            {(tx.price * tx.amount).toLocaleString('en-US', {
+            {new Date(tx.timestamp * 1000).toLocaleString()} - Price: {tx.price.toLocaleString('en-US', {
+              style: 'currency',
+              currency: 'USD',
+            })} - Total: {(tx.price * tx.amount).toLocaleString('en-US', {
               style: 'currency',
               currency: 'USD',
             })}
