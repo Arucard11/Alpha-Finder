@@ -268,40 +268,49 @@ async function scoreWallets(convertedWallets) {
     const runnerCount = wallet.runners.length;
     const globalRunnerCount = await getTotalRunners();
     
-    // 1) Legendary Buyer
+    // First, clear any existing badges that shouldn't persist
+    wallet.badges = wallet.badges || [];
+
+    // 1) One-Hit Wonder (check this first)
+    if (runnerCount === 1) {
+      wallet.badges.push('one hit wonder');
+      // Early continue since one-hit wonders shouldn't get other badges
+      continue;
+    }
+
+    // 2) Legendary Buyer
     if (runnerCount >= 10) {
-      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder' && b !== 'potential alpha'  && b !== 'mid trader' && b !== 'degen sprayer');
+      wallet.badges = wallet.badges.filter(b => 
+        !['one hit wonder', 'potential alpha', 'mid trader', 'degen sprayer'].includes(b)
+      );
       wallet.badges.push('legendary buyer');
     }
-    // 2) Potential Alpha
+    // 3) Potential Alpha
     else if ((runnerCount / globalRunnerCount) * 100 >= 5 && (runnerCount / globalRunnerCount) * 100 <= 9) {
-      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder'&& b !== 'mid trader' && b !== 'degen sprayer');
+      wallet.badges = wallet.badges.filter(b => 
+        !['one hit wonder', 'mid trader', 'degen sprayer'].includes(b)
+      );
       wallet.badges.push('potential alpha');
     }
-    // 3) High Conviction
+    // 4) High Conviction
     else if (
       wallet.runners.some(runner =>
         runner.transactions.sell.some(sell =>
-          runner.timestamps && runner.timestamps.twoMillion && sell.timestamp > runner.timestamps.twoMillion
+          runner.timestamps?.twoMillion && sell.timestamp > runner.timestamps.twoMillion
         )
       )
     ) {
-      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
       wallet.badges.push('high conviction');
     }
-    // 4) Mid Trader
+    // 5) Mid Trader
     else if ((runnerCount / globalRunnerCount) * 100 <= 4 && (runnerCount / globalRunnerCount) * 100 >= 2) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder'  && b !== 'degen sprayer');
       wallet.badges.push('mid trader');
     }
-    // 5) Degen Sprayer
+    // 6) Degen Sprayer
     else if ((runnerCount / globalRunnerCount) * 100 <= 1) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
       wallet.badges.push('degen sprayer');
-    }
-    // 6) One-Hit Wonder
-    else if (runnerCount === 1) {
-      wallet.badges.push('one hit wonder');
     }
     // 7) Diamond Hands (multiple runners held past 'late')
     else if (totalRunnersHeldPastLate(wallet.runners) >= 2) {
@@ -327,7 +336,8 @@ async function scoreWallets(convertedWallets) {
       wallet.badges.push('comeback trader');
     }
 
-    if(wallet.runners.length > 1 && wallet.badges.some(b => b === 'one hit wonder')){
+    // Final cleanup - remove duplicates and ensure one hit wonder is removed if multiple runners
+    if (runnerCount > 1) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
     }
     wallet.badges = [...new Set(wallet.badges)];
