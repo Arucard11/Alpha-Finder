@@ -18,23 +18,39 @@ import annotationPlugin from 'chartjs-plugin-annotation';
 Chart.register(TimeScale, LinearScale, PointElement, LineElement, Tooltip, Legend, annotationPlugin, ScatterController);
 
 const RunnerChart = ({ runner }) => {
-  // Prepare main dataset from allprices
+  // Prepare main dataset from allprices with proper sorting
   const prices = runner.timestamps.allprices || [];
   const sortedPrices = prices.sort((a, b) => a.unixTime - b.unixTime);
+  
+  // Get start and end dates from price data
+  const startDate = sortedPrices.length ? new Date(sortedPrices[0].unixTime * 1000) : new Date();
+  const endDate = sortedPrices.length ? new Date(sortedPrices[sortedPrices.length - 1].unixTime * 1000) : new Date();
+
   const lineData = sortedPrices.map((p) => ({
     x: new Date(p.unixTime * 1000),
     y: p.value,
   }));
 
-  // Prepare buy and sell transaction points
-  const buyPoints = (runner.transactions.buy || []).map((tx) => ({
-    x: new Date(tx.timestamp * 1000),
-    y: tx.price,
-  }));
-  const sellPoints = (runner.transactions.sell || []).map((tx) => ({
-    x: new Date(tx.timestamp * 1000),
-    y: tx.price,
-  }));
+  // Filter buy and sell points to only show within the price data range
+  const buyPoints = (runner.transactions.buy || [])
+    .filter(tx => {
+      const txDate = new Date(tx.timestamp * 1000);
+      return txDate >= startDate && txDate <= endDate;
+    })
+    .map((tx) => ({
+      x: new Date(tx.timestamp * 1000),
+      y: tx.price,
+    }));
+
+  const sellPoints = (runner.transactions.sell || [])
+    .filter(tx => {
+      const txDate = new Date(tx.timestamp * 1000);
+      return txDate >= startDate && txDate <= endDate;
+    })
+    .map((tx) => ({
+      x: new Date(tx.timestamp * 1000),
+      y: tx.price,
+    }));
 
   // Setup annotations for twoMillion, fiveMillion, early, late
   const annotations = {};
@@ -147,6 +163,8 @@ const RunnerChart = ({ runner }) => {
         type: 'time',
         time: { tooltipFormat: 'Pp' },
         title: { display: true, text: 'Time' },
+        min: startDate,
+        max: endDate
       },
       y: {
         title: { display: true, text: 'Price' },
