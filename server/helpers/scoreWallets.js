@@ -479,7 +479,7 @@ async function scoreWallets(convertedWallets) {
       }
       savedCount++;
     } catch (err) {
-        console.error(`Error saving wallet ${wallet.address || wallet.id || 'UNKNOWN'}:`, err);
+        console.error(`Error saving wallet ${wallet}:`, err);
     }
   }
   console.log(`Database operations complete. Processed data for ${savedCount}/${badged.length} wallets.`);
