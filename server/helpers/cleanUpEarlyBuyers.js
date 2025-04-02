@@ -3,7 +3,7 @@ const sandwichConfig = {
     minTotalTransactions: 4,
     timeThresholdSeconds: 60,
     amountThresholdPercent: 0.30,
-    minSandwichPairs: 2
+    minSandwichPairs: 1
 };
 
 /**
