@@ -78,7 +78,7 @@ async function updateWallet(id, field, value) {
     const result = await pool.query(query, [value, id]);
     return result.rows[0];
   } catch (err) {
-    console.error('Error updating wallet:', err);
+    console.error(`Error updating wallet with this value:${value} for this field ${field}`, err, );
     throw err;
   }
 }
