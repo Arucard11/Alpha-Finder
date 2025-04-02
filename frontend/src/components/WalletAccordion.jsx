@@ -94,7 +94,7 @@ const WalletAccordion = ({ wallet }) => {
           </Box>
           {/* PnL */}
           <Typography variant="body2">
-            PnL: <span style={pnlStyle}> ${Number(totalPnl).toLocaleString('en-US', { style: 'currency',currency: 'USD', })}</span>
+            PnL: <span style={pnlStyle}> {Number(totalPnl).toLocaleString('en-US', { style: 'currency',currency: 'USD', })}</span>
           </Typography>
           {/* Badges */}
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
