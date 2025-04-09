@@ -69,7 +69,9 @@ async function getAllNewCoins(){
       let newCoins = []
 
       for(let coin of valid){
+        
           let address
+
           if(coin.address){
           address = coin.address
           }else address = coin

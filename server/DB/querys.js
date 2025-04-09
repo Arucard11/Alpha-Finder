@@ -328,23 +328,46 @@ async function getWalletsDynamic(days, offset, sortBy) {
     // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
 
   } else {
-    // Default sort: primarily by confidence_score
-    console.log("Constructing query to sort by default (confidence_score)...");
+    // Default sort: Calculate sum of scores from runners with recent transactions
+    console.log("Constructing query to sort by sum of qualifying runners' scores...");
     query = `
-      SELECT * -- Select all columns from the wallets table
-      FROM wallets w
-      -- Filter wallets to include only those with at least one recent buy transaction
-      WHERE EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(w.runners) AS runner,
-             jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-        WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
+      WITH wallet_scores AS (
+        SELECT 
+          w.*,
+          (
+            SELECT COALESCE(SUM(
+              CASE 
+                WHEN jsonb_typeof(runner->'score') = 'number' 
+                AND EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+                  WHERE (tx->>'timestamp')::BIGINT >= $1
+                )
+                THEN (runner->>'score')::numeric
+                ELSE 0
+              END
+            ), 0)
+            FROM jsonb_array_elements(w.runners) AS runner
+          ) as calculated_score
+        FROM wallets w
+        WHERE EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(w.runners) AS runner,
+               jsonb_array_elements(runner->'transactions'->'buy') AS tx
+          WHERE (tx->>'timestamp')::BIGINT >= $1
+        )
       )
-      -- Order by confidence score (desc), then ID (asc) for tie-breaking
-      ORDER BY confidence_score DESC, id ASC
-      LIMIT $2 OFFSET $3; -- $2 = limit, $3 = offset
+      SELECT 
+        id,
+        address,
+        runners,
+        calculated_score as confidence_score,
+        badges,
+        pnl
+      FROM wallet_scores
+      ORDER BY calculated_score DESC
+      LIMIT $2 OFFSET $3;
     `;
-    // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
   }
 
   // Log the final query before execution
