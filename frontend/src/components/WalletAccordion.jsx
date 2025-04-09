@@ -21,7 +21,7 @@ const badgeEmojis = {
   'mid trader': '📈',
   'degen sprayer': '🤪',
   'one-hit wonder': '🎯',
-  'diamond hands buyer': '💎',
+  'diamond hands': '💎',
   'whale buyer': '🐋',
   'dead wallet': '⚰️',
   'comeback trader': '🔥',
