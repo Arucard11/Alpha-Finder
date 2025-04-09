@@ -328,12 +328,21 @@ async function getWalletsDynamic(days, offset, sortBy) {
     // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
 
   } else {
-    // Default sort: Calculate sum of scores from runners with recent transactions
+    // Default sort: Calculate scores and filter runners based on timeframe
     console.log("Constructing query to sort by sum of qualifying runners' scores...");
     query = `
       WITH wallet_scores AS (
         SELECT 
           w.*,
+          (
+            SELECT jsonb_agg(runner)
+            FROM jsonb_array_elements(w.runners) AS runner
+            WHERE EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+              WHERE (tx->>'timestamp')::BIGINT >= $1
+            )
+          ) as filtered_runners,
           (
             SELECT COALESCE(SUM(
               CASE 
@@ -360,7 +369,7 @@ async function getWalletsDynamic(days, offset, sortBy) {
       SELECT 
         id,
         address,
-        runners,
+        filtered_runners as runners,
         calculated_score as confidence_score,
         badges,
         pnl
