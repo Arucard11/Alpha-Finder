@@ -278,57 +278,153 @@ async function getWalletsDynamic(days, offset, sortBy) {
   // --- Determine the SQL Query based on sortBy parameter ---
 
   if (sortBy === 'runners') {
-    // Sort by the count of runners having recent buy activity
-    console.log("Constructing query to sort by runners count...");
+    console.log("Constructing query to sort by runners count in timeframe...");
     query = `
-      SELECT
-        w.*,
-        -- Subquery to count runners with at least one buy transaction after the threshold
-        (
-          SELECT COUNT(*)
-          FROM jsonb_array_elements(w.runners) AS runner
-          WHERE EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-            WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
+      WITH wallet_runner_counts AS (
+        SELECT 
+          w.*,
+          (
+            SELECT jsonb_agg(runner)
+            FROM jsonb_array_elements(w.runners) AS runner
+            WHERE EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+              WHERE (tx->>'timestamp')::BIGINT >= $1
+            )
+          ) as filtered_runners,
+          (
+            SELECT COUNT(*)
+            FROM jsonb_array_elements(w.runners) AS runner
+            WHERE EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+              WHERE (tx->>'timestamp')::BIGINT >= $1
+            )
+          ) as runner_count,
+          (
+            SELECT COALESCE(SUM(
+              CASE 
+                WHEN jsonb_typeof(runner->'score') = 'number' 
+                AND EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+                  WHERE (tx->>'timestamp')::BIGINT >= $1
+                )
+                THEN (runner->>'score')::numeric
+                ELSE 0
+              END
+            ), 0)
+            FROM jsonb_array_elements(w.runners) AS runner
+          ) as calculated_score,
+          (
+            SELECT COALESCE(SUM(
+              (
+                SELECT COALESCE(SUM(CAST(sell->>'price' AS NUMERIC) * CAST(sell->>'amount' AS NUMERIC)), 0)
+                FROM jsonb_array_elements(runner->'transactions'->'sell') sell
+                WHERE CAST(sell->>'timestamp' AS BIGINT) >= $1
+              ) - (
+                SELECT COALESCE(SUM(CAST(buy->>'price' AS NUMERIC) * CAST(buy->>'amount' AS NUMERIC)), 0)
+                FROM jsonb_array_elements(runner->'transactions'->'buy') buy
+                WHERE CAST(buy->>'timestamp' AS BIGINT) >= $1
+              )
+            ), 0) as calculated_pnl
+            FROM jsonb_array_elements(w.runners) AS runner
+            WHERE EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+              WHERE (tx->>'timestamp')::BIGINT >= $1
+            )
           )
-        ) AS matching_runners_count -- Alias for the calculated count
-      FROM wallets w
-      -- Filter wallets to include only those with at least one recent buy transaction overall
-      WHERE EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(w.runners) AS runner,
-             jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-        WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
+        FROM wallets w
+        WHERE EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(w.runners) AS runner,
+               jsonb_array_elements(runner->'transactions'->'buy') AS tx
+          WHERE (tx->>'timestamp')::BIGINT >= $1
+        )
       )
-      -- Order by the calculated runner count (desc), then confidence score (desc), then ID (asc) for tie-breaking
-      ORDER BY matching_runners_count DESC, confidence_score DESC, id ASC
-      LIMIT $2 OFFSET $3; -- $2 = limit, $3 = offset
+      SELECT 
+        id,
+        address,
+        filtered_runners as runners,
+        calculated_score as confidence_score,
+        badges,
+        calculated_pnl as pnl,
+        runner_count
+      FROM wallet_runner_counts
+      ORDER BY runner_count DESC
+      LIMIT $2 OFFSET $3;
     `;
-    // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
 
   } else if (sortBy === 'pnl') {
-    // Sort by the pre-calculated PnL field
-    console.log("Constructing query to sort by PnL...");
+    console.log("Constructing query to sort by PnL of runners in timeframe...");
     query = `
-      SELECT * -- Select all columns from the wallets table
-      FROM wallets w
-      -- Filter wallets to include only those with at least one recent buy transaction
-      WHERE EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(w.runners) AS runner,
-             jsonb_array_elements(runner->'transactions'->'buy') AS buyTx
-        WHERE (buyTx->>'timestamp')::BIGINT >= $1 -- $1 = unixTimeThreshold
+      WITH runner_pnls AS (
+        SELECT 
+          w.*,
+          (
+            SELECT jsonb_agg(runner)
+            FROM jsonb_array_elements(w.runners) AS runner
+            WHERE EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+              WHERE (tx->>'timestamp')::BIGINT >= $1
+            )
+          ) as filtered_runners,
+          (
+            SELECT COALESCE(SUM(
+              CASE 
+                WHEN jsonb_typeof(runner->'score') = 'number' 
+                AND EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+                  WHERE (tx->>'timestamp')::BIGINT >= $1
+                )
+                THEN (runner->>'score')::numeric
+                ELSE 0
+              END
+            ), 0)
+            FROM jsonb_array_elements(w.runners) AS runner
+          ) as calculated_score,
+          (
+            SELECT COALESCE(SUM(
+              (
+                SELECT COALESCE(SUM(CAST(sell->>'price' AS NUMERIC) * CAST(sell->>'amount' AS NUMERIC)), 0)
+                FROM jsonb_array_elements(runner->'transactions'->'sell') sell
+                WHERE CAST(sell->>'timestamp' AS BIGINT) >= $1
+              ) - (
+                SELECT COALESCE(SUM(CAST(buy->>'price' AS NUMERIC) * CAST(buy->>'amount' AS NUMERIC)), 0)
+                FROM jsonb_array_elements(runner->'transactions'->'buy') buy
+                WHERE CAST(buy->>'timestamp' AS BIGINT) >= $1
+              )
+            ), 0) as timeframe_pnl
+            FROM jsonb_array_elements(w.runners) AS runner
+            WHERE EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
+              WHERE (tx->>'timestamp')::BIGINT >= $1
+            )
+          )
+        FROM wallets w
+        WHERE EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(w.runners) AS runner,
+               jsonb_array_elements(runner->'transactions'->'buy') AS tx
+          WHERE (tx->>'timestamp')::BIGINT >= $1
+        )
       )
-      -- Order by PnL (desc), then confidence score (desc), then ID (asc) for tie-breaking
-      -- Use NULLS LAST in case the pnl field hasn't been populated for some wallets yet
-      ORDER BY pnl DESC NULLS LAST, confidence_score DESC, id ASC
-      LIMIT $2 OFFSET $3; -- $2 = limit, $3 = offset
+      SELECT 
+        id,
+        address,
+        filtered_runners as runners,
+        calculated_score as confidence_score,
+        badges,
+        timeframe_pnl as pnl
+      FROM runner_pnls
+      ORDER BY timeframe_pnl DESC
+      LIMIT $2 OFFSET $3;
     `;
-    // Note: The params array [unixTimeThreshold, limit, offset] matches the $1, $2, $3 placeholders.
-
   } else {
-    // Default sort: Calculate scores and filter runners based on timeframe
     console.log("Constructing query to sort by sum of qualifying runners' scores...");
     query = `
       WITH wallet_scores AS (
