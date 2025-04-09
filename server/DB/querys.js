@@ -772,6 +772,5 @@ module.exports = {
   getWalletsDynamic,
   getRunnerByAddress,
   getAllFiltered,
-  checkWalletExists,
   pool,
 };
