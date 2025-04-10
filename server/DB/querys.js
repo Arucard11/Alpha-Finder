@@ -774,9 +774,9 @@ async function getWalletsContainingRunner(runnerAddress, offset = 0, limit = 50)
 
 async function getBasicRunnerInfo() {
   const query = `
-    SELECT address, logouri, name, symbol, created_at
+    SELECT address, logouri, name, symbol, created as created_at
     FROM runners
-    ORDER BY created_at DESC;
+    ORDER BY created DESC;
   `;
   try {
     const result = await pool.query(query);
@@ -791,15 +791,15 @@ async function getRunnerLaunchStats() {
   const query = `
     WITH time_blocks AS (
       SELECT 
-        date_trunc('hour', created_at) as block_start,
+        date_trunc('hour', created) as block_start,
         count(*) as launches,
-        EXTRACT(DOW FROM created_at) as day_of_week,
-        EXTRACT(DAY FROM created_at) as day_of_month
+        EXTRACT(DOW FROM created) as day_of_week,
+        EXTRACT(DAY FROM created) as day_of_month
       FROM runners
       GROUP BY 
-        date_trunc('hour', created_at),
-        EXTRACT(DOW FROM created_at),
-        EXTRACT(DAY FROM created_at)
+        date_trunc('hour', created),
+        EXTRACT(DOW FROM created),
+        EXTRACT(DAY FROM created)
     ),
     day_stats AS (
       SELECT 
