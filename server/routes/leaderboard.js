@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const leaderboardController = require('../controllers/leaderboardController');
-const lookupController = require('../controllers/lookupController');
+
 
 // GET /leaderboard/all-time
 router.post('/all-time', leaderboardController.getAllTimeLeaderboard);
@@ -11,7 +11,7 @@ router.post('/all-time', leaderboardController.getAllTimeLeaderboard);
 router.post('/day', leaderboardController.getDayLeaderboard);
 
 // POST /leaderboard/lookup
-router.post('/lookup', lookupController.lookup);
+router.post('/lookup', leaderboardController.lookupAddress);
 
 // GET runner statistics
 router.get('/runner-stats', leaderboardController.getRunnerStats);
