@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, IconButton, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import WalletAccordion from './WalletAccordion';
-import RunnerAccordion from './RunnerAccordion';
+import SimpleRunnerDisplay from './SimpleRunnerDisplay';
 
 const SearchResultOverlay = ({ results, onClose }) => {
   if (!results) return null;
@@ -39,7 +39,7 @@ const SearchResultOverlay = ({ results, onClose }) => {
           
           {results.type === 'runner' && (
             <>
-              <RunnerAccordion runner={results.data.runner} />
+              <SimpleRunnerDisplay runner={results.data.runner} />
               <Typography variant="h6" sx={{ mt: 3, mb: 2, color: '#00e676' }}>
                 Wallets Holding This Runner
               </Typography>

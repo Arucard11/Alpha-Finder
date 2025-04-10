@@ -52,6 +52,11 @@ const RunnerChart = ({ runner }) => {
       y: tx.price,
     }));
 
+  // Function to format timestamp for label
+  const formatTimestamp = (timestamp) => {
+    return new Date(timestamp * 1000).toLocaleString();
+  };
+
   // Setup annotations for twoMillion, fiveMillion, early, late
   const annotations = {};
   let showLegend = false;
@@ -63,7 +68,7 @@ const RunnerChart = ({ runner }) => {
       borderColor: 'purple',
       borderWidth: 2,
       label: {
-        content: '2M',
+        content: `2M (${formatTimestamp(runner.timestamps.twoMillion)})`,
         enabled: true,
         position: 'start',
         backgroundColor: 'purple',
@@ -80,7 +85,7 @@ const RunnerChart = ({ runner }) => {
       borderColor: 'orange',
       borderWidth: 2,
       label: {
-        content: '5M',
+        content: `5M (${formatTimestamp(runner.timestamps.fiveMillion)})`,
         enabled: true,
         position: 'start',
         backgroundColor: 'orange',
@@ -97,7 +102,7 @@ const RunnerChart = ({ runner }) => {
       borderColor: 'blue',
       borderWidth: 2,
       label: {
-        content: 'Early',
+        content: `Early (${formatTimestamp(runner.timestamps.early)})`,
         enabled: true,
         position: 'start',
         backgroundColor: 'blue',
@@ -114,7 +119,7 @@ const RunnerChart = ({ runner }) => {
       borderColor: 'red',
       borderWidth: 2,
       label: {
-        content: 'Late',
+        content: `Late (${formatTimestamp(runner.timestamps.late)})`,
         enabled: true,
         position: 'start',
         backgroundColor: 'red',

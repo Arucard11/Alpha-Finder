@@ -206,61 +206,82 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
   };
 
   return (
-    // Outer container - Ensure it can scroll
     <Box
       sx={{
         display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
+        flexDirection: 'column',
         width: '100%',
-        height: 'calc(100vh - 150px)', // Example: Adjust height based on header/tabs height
+        height: 'calc(100vh - 220px)', // Reduced height
         backgroundColor: '#1d1d1d',
-        overflowY: 'auto', // Explicitly enable vertical scroll
-        overflowX: 'hidden',
         boxShadow: '0px 0px 15px rgba(0,230,118,0.7)',
+        overflow: 'hidden',
+        borderRadius: 1,
+        maxWidth: '1200px', // Match with LeaderboardContainer
+        mx: 'auto', // Center horizontally
       }}
-      id="scrollableDiv"
     >
-      {/* Inner container */}
-      <Box sx={{ width: '100%', maxWidth: '1400px', marginX: 'auto', padding: 2 }}>
-        {/* Top bar (Error display and Export Button) */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, minHeight: '40px' }}>
-          {error && ( <Typography sx={{ color: 'red', flexGrow: 1, textAlign: 'left', mr: 2 }}> Error: {error} </Typography> )}
-          <Box sx={{ ml: error ? 0 : 'auto' }}>
-             {/* Export Button and Menu */}
-             <Button variant="contained" onClick={handleMenuOpen} endIcon={<ArrowDropDownIcon />} sx={{ backgroundColor: '#00e676', color: '#121212', fontWeight: 'bold' }}> Export </Button>
-             <Menu anchorEl={anchorEl} open={openMenu} onClose={handleMenuClose}>
-                <MenuItem onClick={() => handleExport('excel')}>Excel (CSV)</MenuItem>
-                <MenuItem onClick={() => handleExport('sql')}>SQL</MenuItem>
-                <MenuItem onClick={() => handleExport('json')}>JSON</MenuItem>
-             </Menu>
-          </Box>
+      {/* Top bar with export button */}
+      <Box sx={{ 
+        p: 2,
+        display: 'flex', 
+        justifyContent: 'flex-end',
+        borderBottom: '1px solid rgba(0,230,118,0.2)'
+      }}>
+        {error && (
+          <Typography sx={{ color: 'red', flexGrow: 1, mr: 2, fontSize: '1rem' }}>{error}</Typography>
+        )}
+        <Box>
+          <Button
+            variant="contained"
+            onClick={handleMenuOpen}
+            endIcon={<ArrowDropDownIcon />}
+            sx={{ 
+              backgroundColor: '#00e676', 
+              color: '#121212', 
+              fontWeight: 'bold',
+              fontSize: '1rem',
+              px: 3,
+              py: 1
+            }}
+          >
+            Export
+          </Button>
+          <Menu anchorEl={anchorEl} open={openMenu} onClose={handleMenuClose}>
+            <MenuItem onClick={() => handleExport('excel')} sx={{ fontSize: '1rem' }}>Excel (CSV)</MenuItem>
+            <MenuItem onClick={() => handleExport('sql')} sx={{ fontSize: '1rem' }}>SQL</MenuItem>
+            <MenuItem onClick={() => handleExport('json')} sx={{ fontSize: '1rem' }}>JSON</MenuItem>
+          </Menu>
         </Box>
+      </Box>
 
-        {/* Infinite scroll component */}
+      {/* Scrollable content area */}
+      <Box
+        id="scrollableDiv"
+        sx={{
+          flexGrow: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          width: '100%',
+          p: 2,
+          maxHeight: 'calc(100% - 60px)' // Account for export button area
+        }}
+      >
         <InfiniteScroll
           dataLength={wallets.length}
-          next={loadMoreItems} // Use the wrapper function
-          hasMore={hasMore} // Use the state variable directly
-          loader={ // Centralized loader at the bottom
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 2 }}>
+          next={loadMoreItems}
+          hasMore={hasMore}
+          loader={
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
               <CircularProgress size={30} sx={{ color: '#00e676' }} />
-              <Typography sx={{ ml: 2, color: 'grey.500' }}>Loading...</Typography>
             </Box>
           }
-          endMessage={
-            <Typography sx={{ textAlign: 'center', color: 'grey.500', my: 2, p: 2 }}>
-              { !error && wallets.length === 0 ? 'No wallets found.' :
-                !error ? `You've reached the end!` : '' }
-            </Typography>
-          }
           scrollableTarget="scrollableDiv"
-          style={{ overflow: 'visible' }} // Prevent IS from adding its own scrollbars
-          // Optional: Increase scroll threshold if needed (default is 0.8)
-          // scrollThreshold={0.9}
+          style={{ 
+            overflow: 'hidden',
+            maxWidth: '100%'
+          }}
         >
-          {/* Grid layout for wallet cards */}
-          <Grid container spacing={2} sx={{ minHeight: '100px' }}> {/* Add minHeight to grid */}
+          <Grid container spacing={3} sx={{ maxWidth: '100%', m: 0 }}>
             {wallets.map((wallet) => (
               <Grid item xs={12} md={6} key={wallet.id}>
                 <WalletAccordion wallet={wallet} />
@@ -271,9 +292,9 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
 
         {/* Fallback: Show loader if loading initially and no wallets yet */}
         {loading && wallets.length === 0 && !error && (
-             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                <CircularProgress sx={{ color: '#00e676' }} />
-            </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+            <CircularProgress sx={{ color: '#00e676' }} />
+          </Box>
         )}
 
       </Box>
