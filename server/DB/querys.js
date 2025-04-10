@@ -750,7 +750,122 @@ async function deleteWhitelist(walletAddress) {
   }
 }
 
+async function getWalletsContainingRunner(runnerAddress, offset = 0, limit = 50) {
+  const query = `
+    SELECT *
+    FROM wallets
+    WHERE EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(runners) AS runner
+      WHERE runner->>'address' = $1
+    )
+    ORDER BY confidence_score DESC
+    LIMIT $2 OFFSET $3;
+  `;
 
+  try {
+    const result = await pool.query(query, [runnerAddress, limit, offset]);
+    return result.rows;
+  } catch (error) {
+    console.error('Error fetching wallets containing runner:', error);
+    throw error;
+  }
+}
+
+async function getBasicRunnerInfo() {
+  const query = `
+    SELECT address, logouri, name, symbol, created_at
+    FROM runners
+    ORDER BY created_at DESC;
+  `;
+  try {
+    const result = await pool.query(query);
+    return result.rows;
+  } catch (err) {
+    console.error('Error fetching runner basic info:', err);
+    throw err;
+  }
+}
+
+async function getRunnerLaunchStats() {
+  const query = `
+    WITH time_blocks AS (
+      SELECT 
+        date_trunc('hour', created_at) as block_start,
+        count(*) as launches,
+        EXTRACT(DOW FROM created_at) as day_of_week,
+        EXTRACT(DAY FROM created_at) as day_of_month
+      FROM runners
+      GROUP BY 
+        date_trunc('hour', created_at),
+        EXTRACT(DOW FROM created_at),
+        EXTRACT(DAY FROM created_at)
+    ),
+    day_stats AS (
+      SELECT 
+        day_of_week,
+        SUM(launches) as total_launches
+      FROM time_blocks
+      GROUP BY day_of_week
+      ORDER BY total_launches DESC
+      LIMIT 3
+    ),
+    month_distribution AS (
+      SELECT 
+        CASE 
+          WHEN day_of_month <= 15 THEN 'early'
+          ELSE 'late'
+        END as month_part,
+        COUNT(*) as count
+      FROM time_blocks
+      GROUP BY 
+        CASE 
+          WHEN day_of_month <= 15 THEN 'early'
+          ELSE 'late'
+        END
+    )
+    SELECT 
+      json_build_object(
+        'peak_hours', (
+          SELECT json_agg(
+            json_build_object(
+              'hour', block_start,
+              'count', launches
+            )
+          )
+          FROM (
+            SELECT block_start, launches
+            FROM time_blocks
+            ORDER BY launches DESC
+            LIMIT 3
+          ) peak
+        ),
+        'top_days', (
+          SELECT json_agg(
+            json_build_object(
+              'day', day_of_week,
+              'count', total_launches
+            )
+          )
+          FROM day_stats
+        ),
+        'month_distribution', (
+          SELECT json_object_agg(
+            month_part, count
+          )
+          FROM month_distribution
+        )
+      ) as stats;
+  `;
+  
+  try {
+    const result = await pool.query(query);
+    return result.rows[0].stats;
+  } catch (err) {
+    console.error('Error calculating runner launch stats:', err);
+    throw err;
+  }
+}
 
 module.exports = {
   addWallet,
@@ -772,5 +887,8 @@ module.exports = {
   getWalletsDynamic,
   getRunnerByAddress,
   getAllFiltered,
+  getWalletsContainingRunner,
+  getBasicRunnerInfo,
+  getRunnerLaunchStats,
   pool,
 };

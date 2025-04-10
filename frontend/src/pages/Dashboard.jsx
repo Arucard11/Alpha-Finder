@@ -6,6 +6,7 @@ import LeaderboardContainer from '../components/LeaderboardContainer';
 import ThreeBackground from '../components/ThreeBackground';
 import { Container, Grid } from '@mui/material';
 import { useLocation } from 'react-router-dom';
+import RunnerStats from '../components/RunnerStats';
 
 const Dashboard = () => {
   const location = useLocation();
@@ -20,7 +21,10 @@ const Dashboard = () => {
       <Header isAdmin={isAdmin} />
       <Container maxWidth="lg" sx={{ mt: 4 }}>
         <Grid container spacing={4}>
-          <Grid item xs={12}>
+          <Grid item xs={12} md={4}>
+            <RunnerStats />
+          </Grid>
+          <Grid item xs={12} md={8}>
             <LeaderboardContainer />
           </Grid>
         </Grid>

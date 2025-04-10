@@ -1,10 +1,10 @@
-const { getWalletsSorted, getWalletsDynamic } = require('../DB/querys.js');
+const { getWalletsSorted, getWalletsDynamic, getWalletByAddress, getRunnerByAddress, getWalletsContainingRunner } = require('../DB/querys.js');
 
 require("dotenv").config();
 const NodeCache = require('node-cache');
 
 // Create a cache instance with a default TTL (in seconds)
-const cache = new NodeCache({ stdTTL: 3200 }); // Cache expires after 200 seconds
+const cache = new NodeCache({ stdTTL: 300 }); // Cache expires after 200 seconds
 
 // Controller for all-time high leaderboard
 exports.getAllTimeLeaderboard = async (req, res) => {
@@ -84,3 +84,45 @@ exports.getDayLeaderboard = async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
+exports.lookupAddress = async (req, res) => {
+  try {
+    const { address, offset } = req.body;
+    
+    if (!address) {
+      return res.status(400).json({ error: 'Address is required' });
+    }
+
+    // First check if it's a wallet
+    const wallet = await getWalletByAddress(address);
+    if (wallet) {
+      return res.json({
+        type: 'wallet',
+        data: wallet
+      });
+    }
+
+    // If not a wallet, check if it's a runner
+    const runner = await getRunnerByAddress(address);
+    if (runner) {
+      // Get wallets containing this runner
+      const wallets = await getWalletsContainingRunner(address, offset || 0);
+      return res.json({
+        type: 'runner',
+        data: {
+          runner,
+          wallets
+        }
+      });
+    }
+
+    // If neither found
+    return res.status(404).json({ error: 'Address not found' });
+
+  } catch (error) {
+    console.error('Error in lookupAddress:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+
