@@ -22,7 +22,8 @@ async function getRunners(){
                 coin.athprice = athprice
                 coin.timestamps = timestamps
                 coin.athmc = athMarketCap
-                    
+                console.log("ATH Market Cap: ",athMarketCap)
+                console.log("ATH Price: ",athprice)
                     await addRunner(coin)   
             }else{
                 // await addFiltered(coin)
