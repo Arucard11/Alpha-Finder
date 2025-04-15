@@ -291,9 +291,6 @@ async function scoreWallets(convertedWallets) {
 
     // 2) Legendary Buyer
     if (runnerCount >= 10) {
-      wallet.badges = wallet.badges.filter(b => 
-        !['one hit wonder', 'potential alpha', 'mid trader', 'degen sprayer'].includes(b)
-      );
       wallet.badges.push('legendary buyer');
     }
     // 3) Potential Alpha
