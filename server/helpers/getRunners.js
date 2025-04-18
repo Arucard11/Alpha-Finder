@@ -9,33 +9,31 @@ function getUniqueFromFirst(arr1, arr2) {
 async function getRunners(){
     
     
-    try{
-        const newCoins = await getNewCoins()
-        const oldRunners = await getAllRunnerAddresses()
-        const newRunners = getUniqueFromFirst(newCoins,oldRunners)
-
-        for(let coin of newRunners){
-           
+    const newCoins = await getNewCoins()
+    const oldRunners = await getAllRunnerAddresses()
+    const newRunners = getUniqueFromFirst(newCoins,oldRunners)
+    
+    for(let coin of newRunners){
+        try{
             let {athMarketCap,athprice,timestamps} = await getAth(coin.address)
-  
             if(athMarketCap >= 1000000){
                 coin.athprice = athprice
                 coin.timestamps = timestamps
                 coin.athmc = athMarketCap
                 console.log("ATH Market Cap: ",athMarketCap)
                 console.log("ATH Price: ",athprice)
-                    await addRunner(coin)   
+                await addRunner(coin)   
             }else{
                 // await addFiltered(coin)
             }
+        }catch(e){
+            console.log(e)
         }
+    }
 
         return await getUncheckedRunners()
      
       
-    }catch(e){
-        console.log(e)
-    }
 }
 
 module.exports = getRunners;

@@ -272,9 +272,9 @@ async function scoreWallets(convertedWallets) {
   // =====================
   for (const wallet of convertedWallets) {
     const runnerCount = wallet.runners.length;
-    let globalRunnerCount
+    let totalWalletTokens
     try{
-       globalRunnerCount = (await (await fetch(`https://public-api.birdeye.so/v1/wallet/token_list?wallet=${wallet.address}`, options)).json())?.data?.items?.length || 100
+       totalWalletTokens = (await (await fetch(`https://public-api.birdeye.so/v1/wallet/token_list?wallet=${wallet.address}`, options)).json())?.data?.items?.length || 100
     }catch(e){
         console.error("Error in wallet loop: ", e)
     }
@@ -293,9 +293,35 @@ async function scoreWallets(convertedWallets) {
     if (runnerCount >= 10) {
       wallet.badges.push('legendary buyer');
     }
-    // 3) Potential Alpha
-    else if ((runnerCount / globalRunnerCount) * 100 >= 5 && (runnerCount / globalRunnerCount) * 100 <= 9) {
-      wallet.badges = wallet.badges.filter(b => 
+    // New Percentage-Based Badges (Insert before potential alpha)
+    else if ((runnerCount / totalWalletTokens) * 100 > 90) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('ultimate trader');
+    } else if ((runnerCount / totalWalletTokens) * 100 > 80) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('elite trader');
+    } else if ((runnerCount / totalWalletTokens) * 100 > 70) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('grandmaster trader');
+    } else if ((runnerCount / totalWalletTokens) * 100 > 60) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('master trader');
+    } else if ((runnerCount / totalWalletTokens) * 100 > 50) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('expert trader');
+    } else if ((runnerCount / totalWalletTokens) * 100 > 40) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('highly specialized trader');
+    } else if ((runnerCount / totalWalletTokens) * 100 > 30) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('specialized trader');
+    } else if ((runnerCount / totalWalletTokens) * 100 > 20) {
+        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        wallet.badges.push('focused trader');
+    }
+    // 3) Potential Alpha (adjust condition slightly to avoid overlap)
+    else if ((runnerCount / totalWalletTokens) * 100 > 4 && (runnerCount / totalWalletTokens) * 100 <= 20) { // Changed upper bound to 20
+      wallet.badges = wallet.badges.filter(b =>
         !['one hit wonder', 'mid trader', 'degen sprayer'].includes(b)
       );
       wallet.badges.push('potential alpha');
@@ -310,13 +336,13 @@ async function scoreWallets(convertedWallets) {
     ) {
       wallet.badges.push('high conviction');
     }
-    // 5) Mid Trader
-    else if ((runnerCount / globalRunnerCount) * 100 <= 4 && (runnerCount / globalRunnerCount) * 100 >= 2) {
+    // 5) Mid Trader (adjust condition slightly to avoid overlap)
+    else if ((runnerCount / totalWalletTokens) * 100 <= 4 && (runnerCount / totalWalletTokens) * 100 >= 2) {
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder'  && b !== 'degen sprayer');
       wallet.badges.push('mid trader');
     }
-    // 6) Degen Sprayer
-    else if ((runnerCount / globalRunnerCount) * 100 <= 1) {
+    // 6) Degen Sprayer (adjust condition slightly to avoid overlap)
+    else if ((runnerCount / totalWalletTokens) * 100 < 2) { // Changed from <= 1 to < 2
       wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
       wallet.badges.push('degen sprayer');
     }

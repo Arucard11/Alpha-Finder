@@ -201,13 +201,29 @@ async function getTotalRunners() {
  * Returns 50 records per call based on the provided offset.
  *
  * @param {number} [offset] - Number of records to skip for pagination.
+ * @param {string} [sortBy='confidence'] - Sorting criteria: 'confidence', 'pnl', 'runners'.
+ * @param {string[]} [badges=[]] - Array of badges to filter by.
  * @returns {Promise<Array>} - Array of wallet objects.
  */
-async function getWalletsSorted(offset, sortBy = 'confidence') { // Default sortBy to 'confidence'
+async function getWalletsSorted(offset, sortBy = 'confidence', badges = []) {
   const limit = 50;
   let orderByClause;
+  let whereClause = '';
+  let params = [limit, offset];
+  let paramIndex = 3; // Start parameter index after limit and offset
 
-  console.log(`Fetching wallets: sortBy=${sortBy}, offset=${offset}, limit=${limit}`);
+  console.log(`Fetching wallets: sortBy=${sortBy}, offset=${offset}, limit=${limit}, badges=${badges.join(',') || 'none'}`);
+
+  // Add badge filter if provided
+  if (badges && badges.length > 0) {
+    // Use the && operator to check if the 'badges' array column contains all elements from the input array
+    whereClause = `WHERE badges @> $${paramIndex}::text[]`;
+    params.push(badges);
+    paramIndex++;
+    console.log(`Adding badge filter: badges @> ${JSON.stringify(badges)}`);
+  } else {
+    console.log("No badge filter applied.");
+  }
 
   // Determine the ORDER BY clause based on the sortBy parameter
   switch (sortBy) {
@@ -234,19 +250,20 @@ async function getWalletsSorted(offset, sortBy = 'confidence') { // Default sort
   const query = `
     SELECT *
     FROM wallets
+    ${whereClause} 
     ${orderByClause}
     LIMIT $1 OFFSET $2;
   `;
 
   try {
-    const result = await pool.query(query, [limit, offset]);
+    const result = await pool.query(query, params);
     console.log(`Query successful, returned ${result.rows.length} rows.`);
-    return result.rows; // Return the rows directly fetched from DB
+    return result.rows;
   } catch (error) {
-    console.error(`Error in getWalletsSorted (sortBy: ${sortBy}):`, error);
-    console.error('Failed Query:', query); // Log the specific query that failed
-    console.error('Failed Params:', [limit, offset]);
-    throw error; // Re-throw the error for the caller to handle
+    console.error(`Error in getWalletsSorted (sortBy: ${sortBy}, badges: ${badges.join(',')}):`, error);
+    console.error('Failed Query:', query);
+    console.error('Failed Params:', params);
+    throw error;
   }
 }
 
@@ -259,21 +276,35 @@ async function getWalletsSorted(offset, sortBy = 'confidence') { // Default sort
  * @param {number} [days] - Number of days to look back.
  * @param {number} [offset] - Number of records to skip for pagination.
  * @param {string} [sortBy] - Sorting criteria: 'confidence' or 'runners'.
+ * @param {string[]} [badges=[]] - Array of badges to filter by.
  * @returns {Promise<Array>} - Array of wallet objects.
  */
 /**
  * Fetches wallets dynamically based on recent activity, with different sorting options.
  * Added PnL sorting: Tuesday, April 1, 2025 at 7:17:30 AM UTC
  */
-async function getWalletsDynamic(days, offset, sortBy) {
+async function getWalletsDynamic(days, offset, sortBy, badges = []) {
   // Calculate the timestamp threshold based on the number of days ago
-  const unixTimeThreshold = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60); // More explicit calculation
-  const limit = 50; // Define the pagination limit
+  const unixTimeThreshold = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
+  const limit = 50;
   let query; // Variable to hold the SQL query
-  let params = [unixTimeThreshold, limit, offset]; // Parameters for the SQL query
+  let params = [unixTimeThreshold, limit, offset]; // Initial parameters
+  let paramIndex = 4; // Start parameter index after threshold, limit, and offset
+  let badgeWhereClause = '';
+
+  // Add badge filter if provided
+  if (badges && badges.length > 0) {
+    // Use the && operator for array overlap
+    badgeWhereClause = `AND w.badges @> $${paramIndex}::text[]`;
+    params.push(badges);
+    paramIndex++;
+    console.log(`Adding badge filter: w.badges @> ${JSON.stringify(badges)}`);
+  } else {
+    console.log("No badge filter applied.");
+  }
 
   // Log the parameters being used for debugging
-  console.log(`getWalletsDynamic called with: days=${days}, offset=${offset}, sortBy=${sortBy}, threshold=${unixTimeThreshold}`);
+  console.log(`getWalletsDynamic called with: days=${days}, offset=${offset}, sortBy=${sortBy}, badges=${badges.join(',') || 'none'}, threshold=${unixTimeThreshold}`);
 
   // --- Determine the SQL Query based on sortBy parameter ---
 
@@ -333,7 +364,7 @@ async function getWalletsDynamic(days, offset, sortBy) {
               SELECT 1
               FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
               WHERE (tx->>'timestamp')::BIGINT >= $1
-            )
+            ) ${badgeWhereClause}
           )
         FROM wallets w
         WHERE EXISTS (
@@ -341,7 +372,7 @@ async function getWalletsDynamic(days, offset, sortBy) {
           FROM jsonb_array_elements(w.runners) AS runner,
                jsonb_array_elements(runner->'transactions'->'buy') AS tx
           WHERE (tx->>'timestamp')::BIGINT >= $1
-        )
+        ) ${badgeWhereClause}
       )
       SELECT 
         id,
@@ -403,7 +434,7 @@ async function getWalletsDynamic(days, offset, sortBy) {
               SELECT 1
               FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
               WHERE (tx->>'timestamp')::BIGINT >= $1
-            )
+            ) ${badgeWhereClause}
           )
         FROM wallets w
         WHERE EXISTS (
@@ -411,7 +442,7 @@ async function getWalletsDynamic(days, offset, sortBy) {
           FROM jsonb_array_elements(w.runners) AS runner,
                jsonb_array_elements(runner->'transactions'->'buy') AS tx
           WHERE (tx->>'timestamp')::BIGINT >= $1
-        )
+        ) ${badgeWhereClause}
       )
       SELECT 
         id,
@@ -460,7 +491,7 @@ async function getWalletsDynamic(days, offset, sortBy) {
           FROM jsonb_array_elements(w.runners) AS runner,
                jsonb_array_elements(runner->'transactions'->'buy') AS tx
           WHERE (tx->>'timestamp')::BIGINT >= $1
-        )
+        ) ${badgeWhereClause}
       )
       SELECT 
         id,

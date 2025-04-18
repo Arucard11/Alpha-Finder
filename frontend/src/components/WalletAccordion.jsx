@@ -10,22 +10,11 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Tooltip,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RunnerAccordion from './RunnerAccordion'; // Assuming RunnerAccordion no longer needs computePnl
-
-const badgeEmojis = {
-  'legendary buyer': '🏆',
-  'high conviction': '💼',
-  'potential alpha': '🚀',
-  'mid trader': '📈',
-  'degen sprayer': '🤪',
-  'one-hit wonder': '🎯',
-  'diamond hands': '💎',
-  'whale buyer': '🐋',
-  'dead wallet': '⚰️',
-  'comeback trader': '🔥',
-};
+import { badgeEmojis, badgeDescriptions } from '../utils/badgeMappings'; // Import both mappings
 
 // *** CHANGE HERE: Removed computePnl from props ***
 const WalletAccordion = ({ wallet }) => {
@@ -97,20 +86,26 @@ const WalletAccordion = ({ wallet }) => {
             PnL: <span style={pnlStyle}> {Number(totalPnl).toLocaleString('en-US', { style: 'currency',currency: 'USD', })}</span>
           </Typography>
           {/* Badges */}
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, alignItems: 'center' }}>
             {badges.map((badge, idx) => {
-              const emoji = badgeEmojis[badge.toLowerCase()] || '';
+              // Ensure badge name is lowercase for consistent lookup
+              const badgeKey = badge.toLowerCase();
+              const emoji = badgeEmojis[badgeKey] || '';
+              const description = badgeDescriptions[badgeKey] || badge; // Fallback to badge name if no description
+
               return (
-                <Chip
-                  key={idx}
-                  label={`${emoji} ${badge}`}
-                  size="small"
-                  sx={{
-                    backgroundColor: '#00e676',
-                    color: '#121212',
-                    fontWeight: 'bold',
-                  }}
-                />
+                <Tooltip title={description} key={idx} arrow>
+                  {/* Wrap Chip in Tooltip */}
+                  <Chip
+                    label={`${emoji} ${badge}`}
+                    size="small"
+                    sx={{
+                      backgroundColor: '#00e676',
+                      color: '#121212',
+                      fontWeight: 'bold',
+                    }}
+                  />
+                </Tooltip>
               );
             })}
           </Box>

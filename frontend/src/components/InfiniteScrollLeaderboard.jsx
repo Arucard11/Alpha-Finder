@@ -48,7 +48,7 @@ function downloadFile(content, filename, mimeType) {
 // --- End Export Functions ---
 
 
-const InfiniteScrollLeaderboard = ({ type, filter }) => {
+const InfiniteScrollLeaderboard = ({ type, sortBy, badgeFilter }) => {
   const [wallets, setWallets] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -90,7 +90,8 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       return;
     }
 
-    console.log(`--- Fetching Wallets --- Offset: ${currentOffset}, Type: ${type}, Filter: ${filter}`);
+    // Log all filters being used
+    console.log(`--- Fetching Wallets --- Offset: ${currentOffset}, Type: ${type}, SortBy: ${sortBy}, Badges: ${badgeFilter?.join(',') || 'None'}`);
     setLoading(true);
     fetchRequested.current = true; // Mark that a fetch has been initiated
     setError(null);
@@ -100,14 +101,22 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
     let url = '';
     let body = { offset: currentOffset, limit: limit };
 
+    // Add sortBy filter
+    if (sortBy) body.sort = sortBy;
+
+    // Add badge filter if badges are selected
+    if (badgeFilter && badgeFilter.length > 0) {
+        body.badges = badgeFilter; // Add badges array to the body
+    }
+
     if (type === 'all-time') {
       url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/all-time`;
-      if (filter) body.sort = filter;
+      // 'sort' and 'badges' are already in body if provided
     } else {
       url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/day`;
       const days = type === '7-day' ? 7 : type === '30-day' ? 30 : 90;
-      body = { ...body, days }; // Add days
-      if (filter) body.sort = filter;
+      body.days = days; // Add days
+      // 'sort' and 'badges' are already in body if provided
     }
 
     console.log("Request Body:", body);
@@ -165,11 +174,11 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
       console.log("--- Fetch Complete ---");
     }
   // Dependencies for useCallback
-  }, [type, filter, loading, hasMore]); // Include loading/hasMore for checks inside
+  }, [type, sortBy, badgeFilter, loading, hasMore]); // Include loading/hasMore for checks inside
 
   // Effect for initial load and when type/filter changes
   useEffect(() => {
-    console.log(`*** EFFECT: Resetting for type=${type}, filter=${filter} ***`);
+    console.log(`*** EFFECT: Resetting for type=${type}, sortBy=${sortBy}, badges=${badgeFilter?.join(',') || 'None'} ***`);
     setWallets([]);
     setOffset(0);
     setHasMore(true); // Reset hasMore assumption
@@ -191,7 +200,7 @@ const InfiniteScrollLeaderboard = ({ type, filter }) => {
     };
   // FetchWallets is memoized, include it if its definition relies on external scope
   // Or rely on type/filter which are dependencies of fetchWallets via useCallback
-  }, [type, filter]); // Relying on type/filter change is sufficient
+  }, [type, sortBy, badgeFilter]); // Relying on type/filter change is sufficient
 
 
   // Function called by InfiniteScroll's 'next' prop

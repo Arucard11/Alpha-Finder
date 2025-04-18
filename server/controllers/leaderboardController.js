@@ -12,7 +12,8 @@ exports.getAllTimeLeaderboard = async (req, res) => {
     // Extract offset and the new sort parameter from the request body
     // Provide default values if they are missing
     const offset = parseInt(req.body.offset, 10) || 0; // Default offset to 0 if missing/invalid
-    const sort = req.body.sort || 'confidence'; // Default sort to 'confidence' if missing
+    let sort = req.body.sort || 'confidence'; // Default sort to 'confidence' if missing
+    const badges = req.body.badges || []; // Extract badges, default to empty array
 
     // Validate sort parameter if necessary (optional, depends on security needs)
     const validSorts = ['confidence', 'pnl', 'runners'];
@@ -22,8 +23,9 @@ exports.getAllTimeLeaderboard = async (req, res) => {
         // return res.status(400).json({ error: 'Invalid sort parameter specified.' });
     }
 
-    // Construct a unique cache key incorporating both sort criteria and offset
-    const cacheKey = `allTimeLeaderboard_${sort}_${offset}`;
+    // Construct a unique cache key incorporating sort, offset, and badges
+    const badgesCacheString = badges.length > 0 ? badges.sort().join(',') : 'none'; // Create a consistent string for badges
+    const cacheKey = `allTimeLeaderboard_${sort}_${offset}_${badgesCacheString}`;
 
     // Check if the data exists in the cache
     if (cache.has(cacheKey)) {
@@ -35,8 +37,8 @@ exports.getAllTimeLeaderboard = async (req, res) => {
 
     // If not in cache, fetch data from the database using the generalized function
     console.log(`Cache miss for all-time leaderboard (sort: ${sort}, offset: ${offset}). Fetching from DB...`);
-    // Pass the sort criteria to the database function
-    const topWallets = await getWalletsSorted(offset, sort);
+    // Pass the sort criteria and badges to the database function
+    const topWallets = await getWalletsSorted(offset, sort, badges); // Pass badges
 
     console.log(`Fetched ${topWallets.length} wallets from DB.`);
 
@@ -59,17 +61,24 @@ exports.getAllTimeLeaderboard = async (req, res) => {
 exports.getDayLeaderboard = async (req, res) => {
   try {
     const { days, offset, sort } = req.body;
-    // Construct a unique cache key based on days, offset, and sort criteria
-    const cacheKey = `dayLeaderboard_${days}_${offset}_${sort}`;
+    const badges = req.body.badges || []; // Extract badges, default to empty array
+    // Construct a unique cache key based on days, offset, sort criteria, and badges
+    const badgesCacheString = badges.length > 0 ? badges.sort().join(',') : 'none';
+    const cacheKey = `dayLeaderboard_${days}_${offset}_${sort}_${badgesCacheString}`;
 
     // Check if the data exists in the cache
     if (cache.has(cacheKey)) {
       console.log("Cache hit for day leaderboard");
-      return res.json(cache.get(cacheKey).slice(offset,50));
+      // NOTE: The cache holds the *full* page data. Slicing here was likely incorrect before.
+      // If the DB query now correctly handles offset/limit even with badges, this slice is unnecessary.
+      // Assuming the DB function returns the correct slice:
+      return res.json(cache.get(cacheKey));
+      // If the DB function returns *all* matching wallets and needs slicing here, uncomment:
+      // return res.json(cache.get(cacheKey).slice(offset, offset + 50));
     }
 
     // If not in cache, fetch data from the database
-    const wallets = await getWalletsDynamic(days, offset, sort);
+    const wallets = await getWalletsDynamic(days, offset, sort, badges); // Pass badges
     console.log("Request made to days filters: cache miss");
     
     // Slice the data as needed
