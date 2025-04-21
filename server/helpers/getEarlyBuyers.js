@@ -83,10 +83,10 @@ async function getAllTxs(address) {
 
 
 async function getEarlyBuyers(coin) {
-  const { address, name, symbol, logouri, athprice, timestamps } = coin;
+  const { address, name, symbol, logouri, athprice, timestamps,athmc } = coin;
   let secondCheck = true
   // Debug: Log coin and timestamp info.
-  console.log("Coin info:", { address, name, symbol, athprice, timestamps });
+  console.log("Coin info:", { address, name, symbol, athprice, timestamps,athmc });
   
   let earlyTx = await getTxsByTime(address,timestamps.early,"before");
   console.log("transactions before early timestamp",earlyTx.length)
@@ -128,7 +128,7 @@ async function getEarlyBuyers(coin) {
       }
     }
     return acc;
-  }, { mintInfo: { address, name, symbol, logouri, timestamps, athprice} });
+  }, { mintInfo: { address, name, symbol, logouri, timestamps, athprice,athmc} });
 
   
 

@@ -82,54 +82,24 @@ function isPotentialSandwichPattern(transactions, config) {
  * Cleans up early buyers based on several criteria, including potential sandwich activity.
  */
 function cleanUpEarlyBuyers(earlyBuyers) {
-    const walletsToDelete = []; // Keep track of wallets to delete
+    const walletsToDelete = [];
 
     for (let [wallet, transactions] of Object.entries(earlyBuyers)) {
         if (wallet === "mintInfo") continue; // Skip mint info
 
-        // Check 1: No buys
-        if (!transactions.buy || transactions.buy.length === 0) {
-            walletsToDelete.push(wallet);
-            continue; // Move to next wallet
-        }
-
-        // Check 2: All individual buys are < $5
-        // Ensure amount and price exist before multiplying
-        const allBuysBelowThreshold = transactions.buy.every(tx => ((tx.amount || 0) * (tx.price || 0)) < 5);
-        if (allBuysBelowThreshold) {
-            walletsToDelete.push(wallet);
-            continue; // Move to next wallet
-        }
-
         // Check 3: Total buy volume < $50 AND no sells
-        const totalBuys = transactions.buy.reduce((acc, curr) => acc + ((curr.amount || 0) * (curr.price || 0)), 0);
+        const totalBuys = transactions.buy ? transactions.buy.reduce((acc, curr) => acc + ((curr.amount || 0) * (curr.price || 0)), 0) : 0;
         const hasSells = transactions.sell && transactions.sell.length > 0;
         if (totalBuys < 50 && !hasSells) {
             walletsToDelete.push(wallet);
-            continue; // Move to next wallet
-        }
-
-        // Check 4: Buy count >= 6 (Original condition)
-        if (transactions.buy.length >= 6) {
-             walletsToDelete.push(wallet);
-             continue; // Move to next wallet
-        }
-
-        // Check 5: Potential Sandwich Bot Pattern Detected
-        // Pass the 'transactions' object directly
-        if (isPotentialSandwichPattern(transactions, sandwichConfig)) {
-            console.log(`Flagging wallet ${wallet} for deletion due to potential sandwich pattern.`); // Optional logging
-            walletsToDelete.push(wallet);
-            continue; // Move to next wallet
+            continue;
         }
     }
 
-    // Delete the flagged wallets from the original object
     for (const wallet of walletsToDelete) {
         delete earlyBuyers[wallet];
     }
 
-    console.log(`Cleanup complete. Removed ${walletsToDelete.length} wallets.`);
     return earlyBuyers;
 }
 

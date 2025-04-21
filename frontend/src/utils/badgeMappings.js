@@ -17,6 +17,7 @@ export const badgeEmojis = {
   'grandmaster trader': '🧙', // >70% runners
   'elite trader': '🌟',    // >80% runners
   'ultimate trader': '🥇', // >90% runners
+  'bot': '🤖', // Potential sandwich bot
 };
 
 export const badgeDescriptions = {
@@ -38,6 +39,7 @@ export const badgeDescriptions = {
   'grandmaster trader': 'Runner tokens constitute 70-80% of holdings.',
   'elite trader': 'Runner tokens constitute 80-90% of holdings.',
   'ultimate trader': 'Runner tokens constitute 90%+ of holdings.',
+  'bot': 'Potential sandwich bot',
 };
 
 // You could also add descriptions here if needed later

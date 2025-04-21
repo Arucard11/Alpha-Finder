@@ -48,7 +48,7 @@ function downloadFile(content, filename, mimeType) {
 // --- End Export Functions ---
 
 
-const InfiniteScrollLeaderboard = ({ type, sortBy, badgeFilter }) => {
+const InfiniteScrollLeaderboard = ({ type, sortBy, badgeFilter, excludeBots = false, athmcThreshold = null }) => {
   const [wallets, setWallets] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -91,7 +91,7 @@ const InfiniteScrollLeaderboard = ({ type, sortBy, badgeFilter }) => {
     }
 
     // Log all filters being used
-    console.log(`--- Fetching Wallets --- Offset: ${currentOffset}, Type: ${type}, SortBy: ${sortBy}, Badges: ${badgeFilter?.join(',') || 'None'}`);
+    console.log(`--- Fetching Wallets --- Offset: ${currentOffset}, Type: ${type}, SortBy: ${sortBy}, Badges: ${badgeFilter?.join(',') || 'None'}, ExcludeBots: ${excludeBots}, ATHMC Threshold: ${athmcThreshold}`);
     setLoading(true);
     fetchRequested.current = true; // Mark that a fetch has been initiated
     setError(null);
@@ -99,33 +99,39 @@ const InfiniteScrollLeaderboard = ({ type, sortBy, badgeFilter }) => {
     // *** Match this limit with the backend ***
     const limit = 50;
     let url = '';
-    let body = { offset: currentOffset, limit: limit };
 
-    // Add sortBy filter
-    if (sortBy) body.sort = sortBy;
+    // Construct query parameters
+    const queryParams = new URLSearchParams({
+      offset: currentOffset.toString(),
+      limit: limit.toString(),
+      sortBy: sortBy || 'confidence',
+      excludeBots: excludeBots.toString()
+    });
 
     // Add badge filter if badges are selected
     if (badgeFilter && badgeFilter.length > 0) {
-        body.badges = badgeFilter; // Add badges array to the body
+      queryParams.append('badges', badgeFilter.join(','));
+    }
+
+    // Add ATHMC threshold if set
+    if (athmcThreshold !== null) {
+      queryParams.append('athmcThreshold', athmcThreshold.toString());
     }
 
     if (type === 'all-time') {
-      url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/all-time`;
-      // 'sort' and 'badges' are already in body if provided
+      url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/all-time?${queryParams.toString()}`;
     } else {
-      url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/day`;
       const days = type === '7-day' ? 7 : type === '30-day' ? 30 : 90;
-      body.days = days; // Add days
-      // 'sort' and 'badges' are already in body if provided
+      queryParams.append('days', days.toString());
+      url = `${import.meta.env.VITE_API_ENDPOINT}/leaderboard/dynamic?${queryParams.toString()}`;
     }
 
-    console.log("Request Body:", body);
+    console.log("Request URL:", url);
 
     try {
       const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (!response.ok) {
@@ -174,11 +180,11 @@ const InfiniteScrollLeaderboard = ({ type, sortBy, badgeFilter }) => {
       console.log("--- Fetch Complete ---");
     }
   // Dependencies for useCallback
-  }, [type, sortBy, badgeFilter, loading, hasMore]); // Include loading/hasMore for checks inside
+  }, [type, sortBy, badgeFilter, excludeBots, athmcThreshold, loading, hasMore]); // Include loading/hasMore for checks inside
 
   // Effect for initial load and when type/filter changes
   useEffect(() => {
-    console.log(`*** EFFECT: Resetting for type=${type}, sortBy=${sortBy}, badges=${badgeFilter?.join(',') || 'None'} ***`);
+    console.log(`*** EFFECT: Resetting for type=${type}, sortBy=${sortBy}, badges=${badgeFilter?.join(',') || 'None'}, excludeBots=${excludeBots}, athmcThreshold=${athmcThreshold} ***`);
     setWallets([]);
     setOffset(0);
     setHasMore(true); // Reset hasMore assumption
@@ -198,9 +204,8 @@ const InfiniteScrollLeaderboard = ({ type, sortBy, badgeFilter }) => {
         clearTimeout(timerId);
         console.log("*** EFFECT: Cleanup ***");
     };
-  // FetchWallets is memoized, include it if its definition relies on external scope
-  // Or rely on type/filter which are dependencies of fetchWallets via useCallback
-  }, [type, sortBy, badgeFilter]); // Relying on type/filter change is sufficient
+  // Dependencies for useEffect
+  }, [type, sortBy, badgeFilter, excludeBots, athmcThreshold]); // Re-run on filter change
 
 
   // Function called by InfiniteScroll's 'next' prop

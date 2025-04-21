@@ -5,10 +5,10 @@ const leaderboardController = require('../controllers/leaderboardController');
 const runnerStats = require('../controllers/runnerStatsController')
 
 // GET /leaderboard/all-time
-router.post('/all-time', leaderboardController.getAllTimeLeaderboard);
+router.get('/all-time', leaderboardController.getAllTimeLeaderboard);
 
-// GET /leaderboard/90-day
-router.post('/day', leaderboardController.getDayLeaderboard);
+// GET /leaderboard/dynamic (for 7-day, 30-day, 90-day, etc.)
+router.get('/dynamic', leaderboardController.getDayLeaderboard);
 
 // POST /leaderboard/lookup
 router.post('/lookup', leaderboardController.lookupAddress);

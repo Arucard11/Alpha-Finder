@@ -108,6 +108,7 @@ const sandwichConfig = {
 
 /**
  * Helper function to detect potential sandwich bot behavior for a specific runner.
+ * Now also checks if buys or sells are close in time to each other.
  */
 function isPotentialSandwichBot(runner, config) {
     const buys = runner.transactions?.buy || [];
@@ -147,7 +148,33 @@ function isPotentialSandwichBot(runner, config) {
         sandwichPairCount++;
         if (sandwichPairCount >= config.minSandwichPairs) return true;
     }
-    return sandwichPairCount >= config.minSandwichPairs;
+
+    // New check for closeness among buys or sells
+    const buyTimestamps = buys.map(tx => tx.timestamp).filter(ts => typeof ts === 'number' && !isNaN(ts));
+    const sellTimestamps = sells.map(tx => tx.timestamp).filter(ts => typeof ts === 'number' && !isNaN(ts));
+    buyTimestamps.sort((a, b) => a - b);
+    sellTimestamps.sort((a, b) => a - b);
+
+    let buyClosenessCount = 0;
+    for (let i = 0; i < buyTimestamps.length - 1; i++) {
+        const timeDiff = buyTimestamps[i + 1] - buyTimestamps[i];
+        if (timeDiff > 0 && timeDiff <= config.timeThresholdSeconds) {
+            buyClosenessCount++;
+        }
+    }
+
+    let sellClosenessCount = 0;
+    for (let i = 0; i < sellTimestamps.length - 1; i++) {
+        const timeDiff = sellTimestamps[i + 1] - sellTimestamps[i];
+        if (timeDiff > 0 && timeDiff <= config.timeThresholdSeconds) {
+            sellClosenessCount++;
+        }
+    }
+
+    // Consider it a potential bot if there are multiple close buys or sells
+    const hasCloseBuys = buyClosenessCount >= config.minSandwichPairs;
+    const hasCloseSells = sellClosenessCount >= config.minSandwichPairs;
+    return sandwichPairCount >= config.minSandwichPairs || hasCloseBuys || hasCloseSells;
 }
 
 // =========================
@@ -255,6 +282,79 @@ function computeEarlyExitPenalty(runner) {
 }
 
 /**
+ * Helper function to fetch wallet transactions for the past 90 days and calculate unique coins bought.
+ * Returns an object with the count of unique coins bought and runners in the 90-day window.
+ */
+async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
+    const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+    const ninetyDaysAgoMs = Date.now() - NINETY_DAYS_MS;
+    let uniqueCoinsBought = new Set();
+    let runnersInWindow = 0;
+    let allTransactions = [];
+    let beforeParam = '';
+    const limit = 1000;
+
+    try {
+        // Fetch transactions until we cover 90 days or no more data
+        while (true) {
+            const url = `https://public-api.birdeye.so/v1/wallet/tx_list?wallet=${walletAddress}&limit=${limit}${beforeParam ? `&before=${beforeParam}` : ''}`;
+            const response = await fetch(url, apiOptions);
+            const data = await response.json();
+
+            if (!data.success || !data.data.solana || data.data.solana.length === 0) {
+                break;
+            }
+
+            const transactions = data.data.solana;
+            allTransactions.push(...transactions);
+
+            // Check if the oldest transaction is still within 90 days; if so, fetch more
+            const lastTx = transactions[transactions.length - 1];
+            const lastTxTimeMs = new Date(lastTx.blockTime).getTime();
+            if (lastTxTimeMs > ninetyDaysAgoMs) {
+                beforeParam = lastTx.txHash;
+            } else {
+                break;
+            }
+        }
+
+        // Filter transactions for buys within 90 days and collect unique tokens
+        for (const tx of allTransactions) {
+            const txTimeMs = new Date(tx.blockTime).getTime();
+            if (txTimeMs < ninetyDaysAgoMs) continue;
+
+            // Infer buy transaction if balanceChange shows positive amount for a token (not SOL)
+            if (tx.balanceChange) {
+                for (const change of tx.balanceChange) {
+                    if (change.amount > 0 && change.address !== 'So11111111111111111111111111111111111111112') {
+                        uniqueCoinsBought.add(change.address);
+                    }
+                }
+            }
+        }
+
+        // Count runners with early timestamp in the last 90 days
+        for (const runner of runners) {
+            const earlyTimestamp = runner.timestamps?.early;
+            if (earlyTimestamp && earlyTimestamp * 1000 >= ninetyDaysAgoMs) {
+                runnersInWindow++;
+            }
+        }
+
+        return {
+            uniqueCoinsBoughtCount: uniqueCoinsBought.size,
+            runnersInWindow: runnersInWindow
+        };
+    } catch (error) {
+        console.error(`Error fetching 90-day activity for wallet ${walletAddress}:`, error);
+        return {
+            uniqueCoinsBoughtCount: 0,
+            runnersInWindow: 0
+        };
+    }
+}
+
+/**
  * Main scoring function: Assigns badges and calculates scores including PnL.
  */
 async function scoreWallets(convertedWallets) {
@@ -272,11 +372,15 @@ async function scoreWallets(convertedWallets) {
   // =====================
   for (const wallet of convertedWallets) {
     const runnerCount = wallet.runners.length;
-    let totalWalletTokens
-    try{
-       totalWalletTokens = (await (await fetch(`https://public-api.birdeye.so/v1/wallet/token_list?wallet=${wallet.address}`, options)).json())?.data?.items?.length || 100
-    }catch(e){
-        console.error("Error in wallet loop: ", e)
+    let totalWalletTokens = 0;
+    let runnersIn90Days = 0;
+    try {
+        const activityData = await getWalletActivityIn90Days(wallet.address, wallet.runners, options);
+        totalWalletTokens = activityData.uniqueCoinsBoughtCount || 100; // Fallback if no data
+        runnersIn90Days = activityData.runnersInWindow;
+    } catch (e) {
+        console.error("Error fetching 90-day activity for wallet:", e);
+        totalWalletTokens = 100; // Fallback on error
     }
     
     // First, clear any existing badges that shouldn't persist
@@ -293,38 +397,43 @@ async function scoreWallets(convertedWallets) {
     if (runnerCount >= 10) {
       wallet.badges.push('legendary buyer');
     }
-    // New Percentage-Based Badges (Insert before potential alpha)
-    else if ((runnerCount / totalWalletTokens) * 100 > 90) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('ultimate trader');
-    } else if ((runnerCount / totalWalletTokens) * 100 > 80) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('elite trader');
-    } else if ((runnerCount / totalWalletTokens) * 100 > 70) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('grandmaster trader');
-    } else if ((runnerCount / totalWalletTokens) * 100 > 60) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('master trader');
-    } else if ((runnerCount / totalWalletTokens) * 100 > 50) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('expert trader');
-    } else if ((runnerCount / totalWalletTokens) * 100 > 40) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('highly specialized trader');
-    } else if ((runnerCount / totalWalletTokens) * 100 > 30) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('specialized trader');
-    } else if ((runnerCount / totalWalletTokens) * 100 > 20) {
-        wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        wallet.badges.push('focused trader');
-    }
-    // 3) Potential Alpha (adjust condition slightly to avoid overlap)
-    else if ((runnerCount / totalWalletTokens) * 100 > 4 && (runnerCount / totalWalletTokens) * 100 <= 20) { // Changed upper bound to 20
-      wallet.badges = wallet.badges.filter(b =>
-        !['one hit wonder', 'mid trader', 'degen sprayer'].includes(b)
-      );
-      wallet.badges.push('potential alpha');
+    // New Ratio-Based Badges for 90-Day Activity
+    else if (totalWalletTokens > 0) {
+        const ratio = (runnersIn90Days / totalWalletTokens) * 100;
+        if (ratio > 90) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('ultimate trader');
+        } else if (ratio > 80) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('elite trader');
+        } else if (ratio > 70) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('grandmaster trader');
+        } else if (ratio > 60) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('master trader');
+        } else if (ratio > 50) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('expert trader');
+        } else if (ratio > 40) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('highly specialized trader');
+        } else if (ratio > 30) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('specialized trader');
+        } else if (ratio > 20) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+            wallet.badges.push('focused trader');
+        } else if (ratio > 4 && ratio <= 20) {
+            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer'].includes(b));
+            wallet.badges.push('potential alpha');
+        } else if (ratio <= 4 && ratio >= 2) {
+            wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder' && b !== 'degen sprayer');
+            wallet.badges.push('mid trader');
+        } else if (ratio < 2) {
+            wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
+            wallet.badges.push('degen sprayer');
+        }
     }
     // 4) High Conviction
     else if (
@@ -335,16 +444,6 @@ async function scoreWallets(convertedWallets) {
       )
     ) {
       wallet.badges.push('high conviction');
-    }
-    // 5) Mid Trader (adjust condition slightly to avoid overlap)
-    else if ((runnerCount / totalWalletTokens) * 100 <= 4 && (runnerCount / totalWalletTokens) * 100 >= 2) {
-      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder'  && b !== 'degen sprayer');
-      wallet.badges.push('mid trader');
-    }
-    // 6) Degen Sprayer (adjust condition slightly to avoid overlap)
-    else if ((runnerCount / totalWalletTokens) * 100 < 2) { // Changed from <= 1 to < 2
-      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
-      wallet.badges.push('degen sprayer');
     }
     // 7) Diamond Hands (multiple runners held past 'late')
     else if (totalRunnersHeldPastLate(wallet.runners) >= 2) {
@@ -416,10 +515,11 @@ async function scoreWallets(convertedWallets) {
           runner.scored = true;
           continue;
       }
-      if (isPotentialSandwichBot(runner, sandwichConfig)) { // Rule 2: Sandwich Bot
-          runner.score = 0;
-          runner.scored = true;
-          continue;
+      if (isPotentialSandwichBot(runner, sandwichConfig)) { // Rule 2: Sandwich Bot - Assign badge but score normally
+          if (!wallet.badges.includes('bot')) {
+              wallet.badges.push('bot');
+          }
+          // Continue to normal scoring
       }
 
       // --- Standard Scoring Logic ---

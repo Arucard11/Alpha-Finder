@@ -9,88 +9,39 @@ const cache = new NodeCache({ stdTTL: 300 }); // Cache expires after 200 seconds
 // Controller for all-time high leaderboard
 exports.getAllTimeLeaderboard = async (req, res) => {
   try {
-    // Extract offset and the new sort parameter from the request body
-    // Provide default values if they are missing
-    const offset = parseInt(req.body.offset, 10) || 0; // Default offset to 0 if missing/invalid
-    let sort = req.body.sort || 'confidence'; // Default sort to 'confidence' if missing
-    const badges = req.body.badges || []; // Extract badges, default to empty array
+    const offset = parseInt(req.query.offset) || 0;
+    const sortBy = req.query.sortBy || 'confidence';
+    const badges = req.query.badges ? req.query.badges.split(',') : [];
+    const excludeBots = req.query.excludeBots === 'true';
+    const athmcThreshold = req.query.athmcThreshold ? parseInt(req.query.athmcThreshold) : null;
 
-    // Validate sort parameter if necessary (optional, depends on security needs)
-    const validSorts = ['confidence', 'pnl', 'runners'];
-    if (!validSorts.includes(sort)) {
-        console.warn(`Invalid sort parameter received: ${sort}. Defaulting to 'confidence'.`);
-        sort = 'confidence'; // Or return a 400 Bad Request error
-        // return res.status(400).json({ error: 'Invalid sort parameter specified.' });
-    }
+    console.log(`Leaderboard request received. Offset: ${offset}, SortBy: ${sortBy}, Badges: ${badges.join(',') || 'none'}, ExcludeBots: ${excludeBots}, ATHMC Threshold: ${athmcThreshold}`);
 
-    // Construct a unique cache key incorporating sort, offset, and badges
-    const badgesCacheString = badges.length > 0 ? badges.sort().join(',') : 'none'; // Create a consistent string for badges
-    const cacheKey = `allTimeLeaderboard_${sort}_${offset}_${badgesCacheString}`;
-
-    // Check if the data exists in the cache
-    if (cache.has(cacheKey)) {
-      console.log(`Cache hit for all-time leaderboard (sort: ${sort}, offset: ${offset})`);
-      // The data in cache is already the correct page (limit 50, starting at offset)
-      // **No need to slice again here**
-      return res.json(cache.get(cacheKey));
-    }
-
-    // If not in cache, fetch data from the database using the generalized function
-    console.log(`Cache miss for all-time leaderboard (sort: ${sort}, offset: ${offset}). Fetching from DB...`);
-    // Pass the sort criteria and badges to the database function
-    const topWallets = await getWalletsSorted(offset, sort, badges); // Pass badges
-
-    console.log(`Fetched ${topWallets.length} wallets from DB.`);
-
-    // Cache the result (which is already the correct page) for future requests
-    // Use the dynamic cache key
-    cache.set(cacheKey, topWallets); // Cache the exact data returned by the DB query
-
-    // Send the fetched data (which is already the correct page)
-    // **No need to slice again here**
-    res.json(topWallets);
-
+    const wallets = await getWalletsSorted(offset, sortBy, badges, excludeBots, athmcThreshold);
+    res.json(wallets);
   } catch (error) {
-    // Log the specific context of the error
-    console.error(`Error fetching all-time leaderboard (sort: ${req.body.sort}, offset: ${req.body.offset}):`, error);
-    res.status(500).json({ error: 'Internal Server Error' }); // Send a JSON error response
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
 // Controller for 90-day leaderboard
 exports.getDayLeaderboard = async (req, res) => {
   try {
-    const { days, offset, sort } = req.body;
-    const badges = req.body.badges || []; // Extract badges, default to empty array
-    // Construct a unique cache key based on days, offset, sort criteria, and badges
-    const badgesCacheString = badges.length > 0 ? badges.sort().join(',') : 'none';
-    const cacheKey = `dayLeaderboard_${days}_${offset}_${sort}_${badgesCacheString}`;
+    const days = parseInt(req.query.days) || 90; // Default to 90 days
+    const offset = parseInt(req.query.offset) || 0;
+    const sortBy = req.query.sortBy || 'confidence';
+    const badges = req.query.badges ? req.query.badges.split(',') : [];
+    const excludeBots = req.query.excludeBots === 'true';
+    const athmcThreshold = req.query.athmcThreshold ? parseInt(req.query.athmcThreshold) : null;
 
-    // Check if the data exists in the cache
-    if (cache.has(cacheKey)) {
-      console.log("Cache hit for day leaderboard");
-      // NOTE: The cache holds the *full* page data. Slicing here was likely incorrect before.
-      // If the DB query now correctly handles offset/limit even with badges, this slice is unnecessary.
-      // Assuming the DB function returns the correct slice:
-      return res.json(cache.get(cacheKey));
-      // If the DB function returns *all* matching wallets and needs slicing here, uncomment:
-      // return res.json(cache.get(cacheKey).slice(offset, offset + 50));
-    }
+    console.log(`Day leaderboard request received. Days: ${days}, Offset: ${offset}, SortBy: ${sortBy}, Badges: ${badges.join(',') || 'none'}, ExcludeBots: ${excludeBots}, ATHMC Threshold: ${athmcThreshold}`);
 
-    // If not in cache, fetch data from the database
-    const wallets = await getWalletsDynamic(days, offset, sort, badges); // Pass badges
-    console.log("Request made to days filters: cache miss");
-    
-    // Slice the data as needed
-    const result = wallets
-
-    // Cache the result for future requests
-    cache.set(cacheKey, result);
-
-    res.json(result);
-  } catch (e) {
-    console.error('Error fetching day leaderboard:', e);
-    res.status(500).json({ error: 'Internal Server Error' });
+    const wallets = await getWalletsDynamic(days, offset, sortBy, badges, excludeBots, athmcThreshold);
+    res.json(wallets);
+  } catch (error) {
+    console.error('Error fetching day leaderboard:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
@@ -131,6 +82,26 @@ exports.lookupAddress = async (req, res) => {
   } catch (error) {
     console.error('Error in lookupAddress:', error);
     res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Dynamic leaderboard based on recent activity
+const getDynamicLeaderboard = async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 7; // Default to 7 days
+    const offset = parseInt(req.query.offset) || 0;
+    const sortBy = req.query.sortBy || 'confidence';
+    const badges = req.query.badges ? req.query.badges.split(',') : [];
+    const excludeBots = req.query.excludeBots === 'true';
+    const athmcThreshold = req.query.athmcThreshold ? parseInt(req.query.athmcThreshold) : null;
+
+    console.log(`Dynamic leaderboard request received. Days: ${days}, Offset: ${offset}, SortBy: ${sortBy}, Badges: ${badges.join(',') || 'none'}, ExcludeBots: ${excludeBots}, ATHMC Threshold: ${athmcThreshold}`);
+
+    const wallets = await getWalletsDynamic(days, offset, sortBy, badges, excludeBots, athmcThreshold);
+    res.json(wallets);
+  } catch (error) {
+    console.error('Error fetching dynamic leaderboard:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 

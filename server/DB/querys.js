@@ -203,26 +203,45 @@ async function getTotalRunners() {
  * @param {number} [offset] - Number of records to skip for pagination.
  * @param {string} [sortBy='confidence'] - Sorting criteria: 'confidence', 'pnl', 'runners'.
  * @param {string[]} [badges=[]] - Array of badges to filter by.
+ * @param {boolean} [excludeBots=false] - Whether to exclude wallets with the 'bot' badge.
+ * @param {number} [athmcThreshold=null] - Minimum ATHMC threshold for runners (e.g., 2000000 for 2M, 5000000 for 5M).
  * @returns {Promise<Array>} - Array of wallet objects.
  */
-async function getWalletsSorted(offset, sortBy = 'confidence', badges = []) {
+async function getWalletsSorted(offset, sortBy = 'confidence', badges = [], excludeBots = false, athmcThreshold = null) {
   const limit = 50;
   let orderByClause;
-  let whereClause = '';
+  let whereClauses = [];
   let params = [limit, offset];
   let paramIndex = 3; // Start parameter index after limit and offset
 
-  console.log(`Fetching wallets: sortBy=${sortBy}, offset=${offset}, limit=${limit}, badges=${badges.join(',') || 'none'}`);
+  console.log(`Fetching wallets: sortBy=${sortBy}, offset=${offset}, limit=${limit}, badges=${badges.join(',') || 'none'}, excludeBots=${excludeBots}, athmcThreshold=${athmcThreshold}`);
 
   // Add badge filter if provided
   if (badges && badges.length > 0) {
-    // Use the && operator to check if the 'badges' array column contains all elements from the input array
-    whereClause = `WHERE badges @> $${paramIndex}::text[]`;
+    whereClauses.push(`badges @> $${paramIndex}::text[]`);
     params.push(badges);
     paramIndex++;
     console.log(`Adding badge filter: badges @> ${JSON.stringify(badges)}`);
   } else {
     console.log("No badge filter applied.");
+  }
+
+  // Add bot exclusion filter if requested
+  if (excludeBots) {
+    whereClauses.push(`NOT (badges @> ARRAY['bot']::text[])`);
+    console.log("Excluding wallets with 'bot' badge.");
+  }
+
+  // Add ATHMC threshold filter if provided
+  if (athmcThreshold !== null) {
+    whereClauses.push(`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(runners) AS runner
+      WHERE (runner->>'athmc')::numeric >= $${paramIndex}
+    )`);
+    params.push(athmcThreshold);
+    paramIndex++;
+    console.log(`Adding ATHMC filter: runners with athmc >= ${athmcThreshold}`);
   }
 
   // Determine the ORDER BY clause based on the sortBy parameter
@@ -247,6 +266,7 @@ async function getWalletsSorted(offset, sortBy = 'confidence', badges = []) {
   }
 
   // Construct the final query
+  const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
   const query = `
     SELECT *
     FROM wallets
@@ -260,7 +280,7 @@ async function getWalletsSorted(offset, sortBy = 'confidence', badges = []) {
     console.log(`Query successful, returned ${result.rows.length} rows.`);
     return result.rows;
   } catch (error) {
-    console.error(`Error in getWalletsSorted (sortBy: ${sortBy}, badges: ${badges.join(',')}):`, error);
+    console.error(`Error in getWalletsSorted (sortBy: ${sortBy}, badges: ${badges.join(',')}, excludeBots: ${excludeBots}, athmcThreshold: ${athmcThreshold}):`, error);
     console.error('Failed Query:', query);
     console.error('Failed Params:', params);
     throw error;
@@ -277,13 +297,15 @@ async function getWalletsSorted(offset, sortBy = 'confidence', badges = []) {
  * @param {number} [offset] - Number of records to skip for pagination.
  * @param {string} [sortBy] - Sorting criteria: 'confidence' or 'runners'.
  * @param {string[]} [badges=[]] - Array of badges to filter by.
+ * @param {boolean} [excludeBots=false] - Whether to exclude wallets with the 'bot' badge.
+ * @param {number} [athmcThreshold=null] - Minimum ATHMC threshold for runners (e.g., 2000000 for 2M, 5000000 for 5M).
  * @returns {Promise<Array>} - Array of wallet objects.
  */
 /**
  * Fetches wallets dynamically based on recent activity, with different sorting options.
  * Added PnL sorting: Tuesday, April 1, 2025 at 7:17:30 AM UTC
  */
-async function getWalletsDynamic(days, offset, sortBy, badges = []) {
+async function getWalletsDynamic(days, offset, sortBy, badges = [], excludeBots = false, athmcThreshold = null) {
   // Calculate the timestamp threshold based on the number of days ago
   const unixTimeThreshold = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
   const limit = 50;
@@ -291,10 +313,11 @@ async function getWalletsDynamic(days, offset, sortBy, badges = []) {
   let params = [unixTimeThreshold, limit, offset]; // Initial parameters
   let paramIndex = 4; // Start parameter index after threshold, limit, and offset
   let badgeWhereClause = '';
+  let botWhereClause = '';
+  let athmcWhereClause = '';
 
   // Add badge filter if provided
   if (badges && badges.length > 0) {
-    // Use the && operator for array overlap
     badgeWhereClause = `AND w.badges @> $${paramIndex}::text[]`;
     params.push(badges);
     paramIndex++;
@@ -303,8 +326,26 @@ async function getWalletsDynamic(days, offset, sortBy, badges = []) {
     console.log("No badge filter applied.");
   }
 
+  // Add bot exclusion filter if requested
+  if (excludeBots) {
+    botWhereClause = `AND NOT (w.badges @> ARRAY['bot']::text[])`;
+    console.log("Excluding wallets with 'bot' badge.");
+  }
+
+  // Add ATHMC threshold filter if provided
+  if (athmcThreshold !== null) {
+    athmcWhereClause = `AND EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(w.runners) AS runner
+      WHERE (runner->>'athmc')::numeric >= $${paramIndex}
+    )`;
+    params.push(athmcThreshold);
+    paramIndex++;
+    console.log(`Adding ATHMC filter: runners with athmc >= ${athmcThreshold}`);
+  }
+
   // Log the parameters being used for debugging
-  console.log(`getWalletsDynamic called with: days=${days}, offset=${offset}, sortBy=${sortBy}, badges=${badges.join(',') || 'none'}, threshold=${unixTimeThreshold}`);
+  console.log(`getWalletsDynamic called with: days=${days}, offset=${offset}, sortBy=${sortBy}, badges=${badges.join(',') || 'none'}, excludeBots=${excludeBots}, athmcThreshold=${athmcThreshold}, threshold=${unixTimeThreshold}`);
 
   // --- Determine the SQL Query based on sortBy parameter ---
 
@@ -364,7 +405,7 @@ async function getWalletsDynamic(days, offset, sortBy, badges = []) {
               SELECT 1
               FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
               WHERE (tx->>'timestamp')::BIGINT >= $1
-            ) ${badgeWhereClause}
+            )
           )
         FROM wallets w
         WHERE EXISTS (
@@ -372,7 +413,10 @@ async function getWalletsDynamic(days, offset, sortBy, badges = []) {
           FROM jsonb_array_elements(w.runners) AS runner,
                jsonb_array_elements(runner->'transactions'->'buy') AS tx
           WHERE (tx->>'timestamp')::BIGINT >= $1
-        ) ${badgeWhereClause}
+        )
+        ${badgeWhereClause}
+        ${botWhereClause}
+        ${athmcWhereClause}
       )
       SELECT 
         id,
@@ -434,7 +478,7 @@ async function getWalletsDynamic(days, offset, sortBy, badges = []) {
               SELECT 1
               FROM jsonb_array_elements(runner->'transactions'->'buy') AS tx
               WHERE (tx->>'timestamp')::BIGINT >= $1
-            ) ${badgeWhereClause}
+            )
           )
         FROM wallets w
         WHERE EXISTS (
@@ -442,7 +486,10 @@ async function getWalletsDynamic(days, offset, sortBy, badges = []) {
           FROM jsonb_array_elements(w.runners) AS runner,
                jsonb_array_elements(runner->'transactions'->'buy') AS tx
           WHERE (tx->>'timestamp')::BIGINT >= $1
-        ) ${badgeWhereClause}
+        )
+        ${badgeWhereClause}
+        ${botWhereClause}
+        ${athmcWhereClause}
       )
       SELECT 
         id,
@@ -491,7 +538,10 @@ async function getWalletsDynamic(days, offset, sortBy, badges = []) {
           FROM jsonb_array_elements(w.runners) AS runner,
                jsonb_array_elements(runner->'transactions'->'buy') AS tx
           WHERE (tx->>'timestamp')::BIGINT >= $1
-        ) ${badgeWhereClause}
+        )
+        ${badgeWhereClause}
+        ${botWhereClause}
+        ${athmcWhereClause}
       )
       SELECT 
         id,
@@ -807,7 +857,10 @@ async function getBasicRunnerInfo() {
   const query = `
     SELECT address, logouri, name, symbol, created as created_at
     FROM runners
-    ORDER BY created DESC;
+    WHERE athmc > 1200000
+    AND created >= NOW() - INTERVAL '30 days'
+    ORDER BY created DESC
+    LIMIT 10;
   `;
   try {
     const result = await pool.query(query);
@@ -825,12 +878,14 @@ async function getRunnerLaunchStats() {
         date_trunc('hour', created) as block_start,
         count(*) as launches,
         EXTRACT(DOW FROM created) as day_of_week,
-        EXTRACT(DAY FROM created) as day_of_month
+        EXTRACT(DAY FROM created) as day_of_month,
+        EXTRACT(HOUR FROM created) as hour_of_day
       FROM runners
       GROUP BY 
         date_trunc('hour', created),
         EXTRACT(DOW FROM created),
-        EXTRACT(DAY FROM created)
+        EXTRACT(DAY FROM created),
+        EXTRACT(HOUR FROM created)
     ),
     day_stats AS (
       SELECT 
@@ -838,6 +893,15 @@ async function getRunnerLaunchStats() {
         SUM(launches) as total_launches
       FROM time_blocks
       GROUP BY day_of_week
+      ORDER BY total_launches DESC
+      LIMIT 3
+    ),
+    hour_stats AS (
+      SELECT 
+        hour_of_day,
+        SUM(launches) as total_launches
+      FROM time_blocks
+      GROUP BY hour_of_day
       ORDER BY total_launches DESC
       LIMIT 3
     ),
@@ -860,16 +924,11 @@ async function getRunnerLaunchStats() {
         'peak_hours', (
           SELECT json_agg(
             json_build_object(
-              'hour', block_start,
-              'count', launches
+              'hour', hour_of_day,
+              'count', total_launches
             )
           )
-          FROM (
-            SELECT block_start, launches
-            FROM time_blocks
-            ORDER BY launches DESC
-            LIMIT 3
-          ) peak
+          FROM hour_stats
         ),
         'top_days', (
           SELECT json_agg(
