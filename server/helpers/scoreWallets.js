@@ -354,175 +354,163 @@ async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
     }
 }
 
+// Manual promise pool for concurrency limiting
+async function promisePool(items, worker, concurrency) {
+  const results = [];
+  let i = 0;
+  async function next() {
+    if (i >= items.length) return;
+    const currentIndex = i++;
+    results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    await next();
+  }
+  await Promise.all(Array.from({ length: concurrency }, next));
+  return results;
+}
+
 /**
  * Main scoring function: Assigns badges and calculates scores including PnL.
  */
 async function scoreWallets(convertedWallets) {
-  let badged = [];
   const options = {
     method: 'GET',
     headers: {accept: 'application/json', 'x-chain': 'solana', 'X-API-KEY': `${process.env.BIRDEYE_API_KEY}`},
   };
-  
-
+  const concurrencyLimit = 5;
   console.log(`Starting scoring for ${convertedWallets.length} wallets...`);
 
-  // =====================
-  //   BADGE ASSIGNMENT
-  // =====================
-  for (const wallet of convertedWallets) {
-    const runnerCount = wallet.runners.length;
+  // Worker function for a single wallet
+  async function processWallet(wallet) {
     let totalWalletTokens = 0;
     let runnersIn90Days = 0;
+    let badgedWallet = wallet;
     try {
-        const activityData = await getWalletActivityIn90Days(wallet.address, wallet.runners, options);
-        totalWalletTokens = activityData.uniqueCoinsBoughtCount || 100; // Fallback if no data
-        runnersIn90Days = activityData.runnersInWindow;
+      const activityData = await getWalletActivityIn90Days(wallet.address, wallet.runners, options);
+      totalWalletTokens = activityData.uniqueCoinsBoughtCount || 100;
+      runnersIn90Days = activityData.runnersInWindow;
     } catch (e) {
-        console.error("Error fetching 90-day activity for wallet:", e);
-        totalWalletTokens = 100; // Fallback on error
+      console.error("Error fetching 90-day activity for wallet:", e);
+      totalWalletTokens = 100;
     }
-    
-    // First, clear any existing badges that shouldn't persist
-    wallet.badges = wallet.badges || [];
-
+    badgedWallet.badges = badgedWallet.badges || [];
+    const runnerCount = badgedWallet.runners.length;
     // 1) One-Hit Wonder (check this first)
     if (runnerCount === 1) {
-      wallet.badges.push('one hit wonder');
-      // Early continue since one-hit wonders shouldn't get other badges
-      continue;
+      badgedWallet.badges.push('one hit wonder');
+      // Early return since one-hit wonders shouldn't get other badges
+      return await finalizeWallet(badgedWallet);
     }
-
     // 2) Legendary Buyer
     if (runnerCount >= 10) {
-      wallet.badges.push('legendary buyer');
+      badgedWallet.badges.push('legendary buyer');
     }
     // New Ratio-Based Badges for 90-Day Activity
     else if (totalWalletTokens > 0) {
-        const ratio = (runnersIn90Days / totalWalletTokens) * 100;
-        if (ratio > 90) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('ultimate trader');
-        } else if (ratio > 80) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('elite trader');
-        } else if (ratio > 70) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('grandmaster trader');
-        } else if (ratio > 60) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('master trader');
-        } else if (ratio > 50) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('expert trader');
-        } else if (ratio > 40) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('highly specialized trader');
-        } else if (ratio > 30) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('specialized trader');
-        } else if (ratio > 20) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-            wallet.badges.push('focused trader');
-        } else if (ratio > 4 && ratio <= 20) {
-            wallet.badges = wallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer'].includes(b));
-            wallet.badges.push('potential alpha');
-        } else if (ratio <= 4 && ratio >= 2) {
-            wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder' && b !== 'degen sprayer');
-            wallet.badges.push('mid trader');
-        } else if (ratio < 2) {
-            wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
-            wallet.badges.push('degen sprayer');
-        }
+      const ratio = (runnersIn90Days / totalWalletTokens) * 100;
+      if (ratio > 90) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('ultimate trader');
+      } else if (ratio > 80) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('elite trader');
+      } else if (ratio > 70) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('grandmaster trader');
+      } else if (ratio > 60) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('master trader');
+      } else if (ratio > 50) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('expert trader');
+      } else if (ratio > 40) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('highly specialized trader');
+      } else if (ratio > 30) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('specialized trader');
+      } else if (ratio > 20) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
+        badgedWallet.badges.push('focused trader');
+      } else if (ratio > 4 && ratio <= 20) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer'].includes(b));
+        badgedWallet.badges.push('potential alpha');
+      } else if (ratio <= 4 && ratio >= 2) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder' && b !== 'degen sprayer');
+        badgedWallet.badges.push('mid trader');
+      } else if (ratio < 2) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder');
+        badgedWallet.badges.push('degen sprayer');
+      }
     }
     // 4) High Conviction
     else if (
-      wallet.runners.some(runner =>
+      badgedWallet.runners.some(runner =>
         runner.transactions.sell.some(sell =>
           runner.timestamps?.twoMillion && sell.timestamp > runner.timestamps.twoMillion
         )
       )
     ) {
-      wallet.badges.push('high conviction');
+      badgedWallet.badges.push('high conviction');
     }
     // 7) Diamond Hands (multiple runners held past 'late')
-    else if (totalRunnersHeldPastLate(wallet.runners) >= 2) {
-      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
-      wallet.badges.push('diamond hands');
+    else if (totalRunnersHeldPastLate(badgedWallet.runners) >= 2) {
+      badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder');
+      badgedWallet.badges.push('diamond hands');
     }
     // 8) Whale Buyer
     else if (
-      wallet.runners.some(runner =>
+      badgedWallet.runners.some(runner =>
         (runner.transactions.buy.some(b => b.amount * b.price >= 5000)) ||
         (runner.transactions.sell.some(s => s.amount * s.price >= 5000))
       )
     ) {
-      wallet.badges.push('whale buyer');
+      badgedWallet.badges.push('whale buyer');
     }
     // 9) Dead Wallet
-    else if (await checkIfDeadWallet(wallet.address)) {
-      wallet.badges.push('dead wallet');
+    else if (await checkIfDeadWallet(badgedWallet.address)) {
+      badgedWallet.badges.push('dead wallet');
     }
     // 10) Comeback Trader
-    else if (await checkIfComebackTrader(wallet.address)) {
-      wallet.badges = wallet.badges.filter(b => b !== 'dead wallet');
-      wallet.badges.push('comeback trader');
+    else if (await checkIfComebackTrader(badgedWallet.address)) {
+      badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'dead wallet');
+      badgedWallet.badges.push('comeback trader');
     }
-
     // Final cleanup - remove duplicates and ensure one hit wonder is removed if multiple runners
     if (runnerCount > 1) {
-      wallet.badges = wallet.badges.filter(b => b !== 'one hit wonder');
+      badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder');
     }
-    wallet.badges = [...new Set(wallet.badges)];
-    badged.push(wallet);
-  }
-  console.log("Badge assignment complete.");
-
-  // =========================
-  //  CALCULATE TOKEN SCORES, WALLET SCORE & PNL
-  // =========================
-  console.log("Calculating token scores, wallet scores, and PnL...");
-  for (const wallet of badged) {
-    let totalWalletBuyValue = 0; // Initialize PnL counters for the wallet
+    badgedWallet.badges = [...new Set(badgedWallet.badges)];
+    // --- Calculate token scores, wallet score, and PnL ---
+    let totalWalletBuyValue = 0;
     let totalWalletSellValue = 0;
-
-    for (const runner of wallet.runners) {
-      if (runner.scored) { // If already scored, still need its txn values for PnL
-        // Add runner's transactions to wallet PnL totals
+    for (const runner of badgedWallet.runners) {
+      if (runner.scored) {
         (runner.transactions?.buy || []).forEach(buy => {
-             totalWalletBuyValue += (buy.amount || 0) * (buy.price || 0);
+          totalWalletBuyValue += (buy.amount || 0) * (buy.price || 0);
         });
         (runner.transactions?.sell || []).forEach(sell => {
-            totalWalletSellValue += (sell.amount || 0) * (sell.price || 0);
+          totalWalletSellValue += (sell.amount || 0) * (sell.price || 0);
         });
-        continue; // Skip scoring logic if already scored
+        continue;
       }
-
-      // --- Add Txn Values to Wallet PnL Totals ---
       (runner.transactions?.buy || []).forEach(buy => {
-         totalWalletBuyValue += (buy.amount || 0) * (buy.price || 0);
+        totalWalletBuyValue += (buy.amount || 0) * (buy.price || 0);
       });
       (runner.transactions?.sell || []).forEach(sell => {
-          totalWalletSellValue += (sell.amount || 0) * (sell.price || 0);
+        totalWalletSellValue += (sell.amount || 0) * (sell.price || 0);
       });
-
-      // --- Apply Scoring Rules ---
       const hasBuys = runner.transactions?.buy && runner.transactions.buy.length > 0;
       const hasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
-
-      if (hasBuys && !hasSells) { // Rule 1: Buy-Only
-          runner.score = 2;
-          runner.scored = true;
-          continue;
+      if (hasBuys && !hasSells) {
+        runner.score = 2;
+        runner.scored = true;
+        continue;
       }
-      if (isPotentialSandwichBot(runner, sandwichConfig)) { // Rule 2: Sandwich Bot - Assign badge but score normally
-          if (!wallet.badges.includes('bot')) {
-              wallet.badges.push('bot');
-          }
-          // Continue to normal scoring
+      if (isPotentialSandwichBot(runner, sandwichConfig)) {
+        if (!badgedWallet.badges.includes('bot')) {
+          badgedWallet.badges.push('bot');
+        }
       }
-
-      // --- Standard Scoring Logic ---
       const earlyBuyPoints = computeEarlyBuyPoints(runner);
       const holdingMultiplier = computeHoldingMultiplier(runner);
       const convictionBonus = computeConvictionBonus(runner);
@@ -531,103 +519,83 @@ async function scoreWallets(convertedWallets) {
       const finalTokenScore = baseScore * (1 - earlyExitPenalty);
       runner.score = isNaN(finalTokenScore) ? 0 : finalTokenScore;
       runner.scored = true;
-
-    } // End of runners loop
-
-    // --- Calculate Wallet-Level Metrics ---
-
-    // PnL Calculation for the Wallet
-    wallet.pnl = totalWalletSellValue - totalWalletBuyValue;
-    if (isNaN(wallet.pnl)) wallet.pnl = 0; // Ensure PnL is a number
-
-    // Sum of valid token scores
-    const sumTokenScores = wallet.runners.reduce((acc, r) => acc + (r.score || 0), 0);
-
-    // Success Rate Calculation (same as before)
+    }
+    badgedWallet.pnl = totalWalletSellValue - totalWalletBuyValue;
+    if (isNaN(badgedWallet.pnl)) badgedWallet.pnl = 0;
+    const sumTokenScores = badgedWallet.runners.reduce((acc, r) => acc + (r.score || 0), 0);
     let boughtBelowCount = 0;
     let successCount = 0;
     const nowSecWallet = Math.floor(Date.now() / 1000);
-    for (const runner of wallet.runners) {
-        const tEarly = runner.timestamps?.early; const tLate = runner.timestamps?.late;
-        if (tEarly == null || tLate == null) continue;
-        const anyBuyEarly = runner.transactions?.buy?.some(b => b.timestamp != null && b.timestamp <= tEarly);
-        if (!anyBuyEarly) continue;
-        boughtBelowCount++;
-        let heldPastLate = false;
-        const runnerHasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
-        if (!runnerHasSells) { if (nowSecWallet > tLate) heldPastLate = true; }
-        else { if (runner.transactions.sell.some(s => s.timestamp != null && s.timestamp > tLate)) heldPastLate = true; }
-        if (heldPastLate) successCount++;
+    for (const runner of badgedWallet.runners) {
+      const tEarly = runner.timestamps?.early; const tLate = runner.timestamps?.late;
+      if (tEarly == null || tLate == null) continue;
+      const anyBuyEarly = runner.transactions?.buy?.some(b => b.timestamp != null && b.timestamp <= tEarly);
+      if (!anyBuyEarly) continue;
+      boughtBelowCount++;
+      let heldPastLate = false;
+      const runnerHasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
+      if (!runnerHasSells) { if (nowSecWallet > tLate) heldPastLate = true; }
+      else { if (runner.transactions.sell.some(s => s.timestamp != null && s.timestamp > tLate)) heldPastLate = true; }
+      if (heldPastLate) successCount++;
     }
     const successRate = boughtBelowCount > 0 ? (successCount / boughtBelowCount) * 100 : 0;
-
-    // Wallet Multiplier (same as before)
     let walletMultiplier = 0.5;
     if (successRate >= 50) walletMultiplier = 1.5;
     else if (successRate >= 20) walletMultiplier = 1.2;
     else if (successRate >= 10) walletMultiplier = 1.0;
-
-    // Activity Decay Calculation (same as before)
     let lastActivity = 0;
-    for (const runner of wallet.runners) {
-        const buyTimes = runner.transactions?.buy?.map(b => b.timestamp).filter(ts => ts != null) || [];
-        const sellTimes = runner.transactions?.sell?.map(s => s.timestamp).filter(ts => ts != null) || [];
-        const maxTimeRunner = Math.max(0, ...buyTimes, ...sellTimes);
-        if (maxTimeRunner > lastActivity) lastActivity = maxTimeRunner;
+    for (const runner of badgedWallet.runners) {
+      const buyTimes = runner.transactions?.buy?.map(b => b.timestamp).filter(ts => ts != null) || [];
+      const sellTimes = runner.transactions?.sell?.map(s => s.timestamp).filter(ts => ts != null) || [];
+      const maxTimeRunner = Math.max(0, ...buyTimes, ...sellTimes);
+      if (maxTimeRunner > lastActivity) lastActivity = maxTimeRunner;
     }
     let decayAmount = 0;
     if (lastActivity > 0) {
-        const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60; const inactiveTimeSec = nowSecWallet - lastActivity - THIRTY_DAYS_SEC;
-        if (inactiveTimeSec > 0) {
-            const weeksInactive = Math.floor(inactiveTimeSec / (7 * 24 * 60 * 60));
-            if (weeksInactive > 0) decayAmount = sumTokenScores * (weeksInactive * 0.02);
-        }
+      const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60; const inactiveTimeSec = nowSecWallet - lastActivity - THIRTY_DAYS_SEC;
+      if (inactiveTimeSec > 0) {
+        const weeksInactive = Math.floor(inactiveTimeSec / (7 * 24 * 60 * 60));
+        if (weeksInactive > 0) decayAmount = sumTokenScores * (weeksInactive * 0.02);
+      }
     }
-
-    // Final Wallet Confidence Score
     const calculatedScore = (sumTokenScores * walletMultiplier) - decayAmount;
-    wallet.confidence_score = isNaN(calculatedScore) ? 0 : Math.max(0, calculatedScore);
+    badgedWallet.confidence_score = isNaN(calculatedScore) ? 0 : Math.max(0, calculatedScore);
+    return await finalizeWallet(badgedWallet);
+  }
 
-  } // End of wallet scoring loop
-
-  console.log("Scoring and PnL calculation complete. Saving to database...");
-
-  // =====================
-  //   SAVE TO DATABASE
-  // =====================
-  let savedCount = 0;
-  for (const wallet of badged) {
-    // Cleanup and validation before saving
+  // Save to DB and cleanup
+  async function finalizeWallet(wallet) {
     for (const runner of wallet.runners) {
       if (runner.timestamps && runner.timestamps.hasOwnProperty('allprices')) delete runner.timestamps.allprices;
       if (typeof runner.score !== 'number' || isNaN(runner.score)) runner.score = 0;
     }
     if (typeof wallet.confidence_score !== 'number' || isNaN(wallet.confidence_score)) wallet.confidence_score = 0;
-    if (typeof wallet.pnl !== 'number' || isNaN(wallet.pnl)) wallet.pnl = 0; // Validate PnL
+    if (typeof wallet.pnl !== 'number' || isNaN(wallet.pnl)) wallet.pnl = 0;
     if (!Array.isArray(wallet.badges)) wallet.badges = [];
-
     try {
-      if (wallet.id) { // Update existing wallet
-        // Update individual fields including the new pnl field
+      if (wallet.id) {
         await updateWallet(wallet.id, 'runners', wallet.runners);
         await updateWallet(wallet.id, 'confidence_score', wallet.confidence_score);
         await updateWallet(wallet.id, 'badges', wallet.badges);
-        await updateWallet(wallet.id, 'pnl', wallet.pnl); // *** ADDED PNL UPDATE ***
-      } else { // Add new wallet
+        await updateWallet(wallet.id, 'pnl', wallet.pnl);
+      } else {
         if (!wallet.address) {
-            console.warn("Skipping addWallet: Wallet missing address.", wallet);
-            continue;
+          console.warn("Skipping addWallet: Wallet missing address.", wallet);
+          return null;
         }
-        // Assuming addWallet saves the entire wallet object, including the new pnl field
         await addWallet(wallet);
       }
-      savedCount++;
+      return wallet;
     } catch (err) {
-        console.error(`Error saving wallet ${wallet}:`, err);
+      console.error(`Error saving wallet ${wallet}:`, err);
+      return null;
     }
   }
-  console.log(`Database operations complete. Processed data for ${savedCount}/${badged.length} wallets.`);
 
-} // End of scoreWallets function
+  // Run the pool
+  const results = await promisePool(convertedWallets, processWallet, concurrencyLimit);
+  const processed = results.filter(Boolean);
+  console.log(`Database operations complete. Processed data for ${processed.length}/${convertedWallets.length} wallets.`);
+}
 
 module.exports = scoreWallets;
