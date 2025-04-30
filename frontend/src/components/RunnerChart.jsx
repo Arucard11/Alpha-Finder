@@ -111,22 +111,58 @@ const RunnerChart = ({ runner }) => {
     };
     showLegend = true;
   }
-  if (runner.timestamps.late) {
-    annotations.lateLine = {
+  // Add annotations for maxProfitStart and maxProfitEnd with a shaded zone
+  if (runner.timestamps.maxProfitStart) {
+    annotations.maxProfitStartLine = {
       type: 'line',
-      xMin: new Date(runner.timestamps.late * 1000),
-      xMax: new Date(runner.timestamps.late * 1000),
-      borderColor: 'red',
+      xMin: new Date(runner.timestamps.maxProfitStart * 1000),
+      xMax: new Date(runner.timestamps.maxProfitStart * 1000),
+      borderColor: 'cyan',
       borderWidth: 2,
       label: {
-        content: `Late (${formatTimestamp(runner.timestamps.late)})`,
+        content: `Max Profit Start (${formatTimestamp(runner.timestamps.maxProfitStart)})`,
         enabled: true,
         position: 'start',
-        backgroundColor: 'red',
+        backgroundColor: 'cyan',
+        color: '#000000',
+      },
+    };
+    showLegend = true;
+  }
+  if (runner.timestamps.maxProfitEnd) {
+    annotations.maxProfitEndLine = {
+      type: 'line',
+      xMin: new Date(runner.timestamps.maxProfitEnd * 1000),
+      xMax: new Date(runner.timestamps.maxProfitEnd * 1000),
+      borderColor: 'magenta',
+      borderWidth: 2,
+      label: {
+        content: `Max Profit End (${formatTimestamp(runner.timestamps.maxProfitEnd)})`,
+        enabled: true,
+        position: 'start',
+        backgroundColor: 'magenta',
         color: '#ffffff',
       },
     };
     showLegend = true;
+  }
+  // Add shaded area for maxProfitZone if both start and end are available
+  if (runner.timestamps.maxProfitStart && runner.timestamps.maxProfitEnd) {
+    annotations.maxProfitZone = {
+      type: 'box',
+      xMin: new Date(runner.timestamps.maxProfitStart * 1000),
+      xMax: new Date(runner.timestamps.maxProfitEnd * 1000),
+      backgroundColor: 'rgba(0, 255, 255, 0.2)', // Light cyan shade for the zone
+      borderColor: 'rgba(0, 255, 255, 0.5)',
+      borderWidth: 1,
+      label: {
+        content: 'Max Profit Zone',
+        enabled: true,
+        position: 'center',
+        backgroundColor: 'rgba(0, 255, 255, 0.7)',
+        color: '#000000',
+      },
+    };
   }
 
   const data = {
@@ -227,8 +263,14 @@ const RunnerChart = ({ runner }) => {
           <span style={{ marginRight: '12px' }}>
             <span style={{ color: 'blue', fontWeight: 'bold' }}>■</span> Early Timestamp
           </span>
+          <span style={{ marginRight: '12px' }}>
+            <span style={{ color: 'cyan', fontWeight: 'bold' }}>■</span> Max Profit Start
+          </span>
+          <span style={{ marginRight: '12px' }}>
+            <span style={{ color: 'magenta', fontWeight: 'bold' }}>■</span> Max Profit End
+          </span>
           <span>
-            <span style={{ color: 'red', fontWeight: 'bold' }}>■</span> Holding Threshold Timestamp
+            <span style={{ color: 'rgba(0, 255, 255, 0.7)', fontWeight: 'bold' }}>■</span> Max Profit Zone
           </span>
         </div>
       )}
@@ -237,12 +279,14 @@ const RunnerChart = ({ runner }) => {
         style={{
           marginTop: '8px',
           backgroundColor: '#333',
-          padding: '8px',
-          borderRadius: '4px',
+          padding: '12px',
+          borderRadius: '6px',
+          maxHeight: '200px',
+          overflowY: 'auto',
         }}
       >
-        <div style={{ marginBottom: '4px' }}>
-          <strong style={{ color: '#ffffff' }}>All Transactions:</strong>
+        <div style={{ marginBottom: '8px' }}>
+          <strong style={{ color: '#ffffff', fontSize: '0.9rem' }}>All Transactions:</strong>
         </div>
         {[...runner.transactions.buy.map(tx => ({ ...tx, type: 'buy' })),
           ...runner.transactions.sell.map(tx => ({ ...tx, type: 'sell' }))]
@@ -251,12 +295,40 @@ const RunnerChart = ({ runner }) => {
           <div
             key={`transaction-${idx}`}
             style={{
-              color: tx.type === 'buy' ? 'green' : 'red',
-              fontSize: '0.75rem',
-              marginBottom: '2px',
+              color: tx.type === 'buy' ? '#00e676' : '#ff1744',
+              fontSize: '0.85rem',
+              marginBottom: '6px',
+              padding: '6px',
+              backgroundColor: tx.type === 'buy' ? 'rgba(0, 230, 118, 0.1)' : 'rgba(255, 23, 68, 0.1)',
+              borderRadius: '4px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
             }}
           >
-            {new Date(tx.timestamp * 1000).toLocaleString()} - {tx.type === 'buy' ? 'Buy' : 'Sell'} - Price: ${Number(tx.price).toFixed(5)} - Total: ${(tx.price * tx.amount).toFixed(0)}
+            <span style={{ fontWeight: 'bold', minWidth: '150px' }}>
+              {new Date(tx.timestamp * 1000).toLocaleString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}
+            </span>
+            <span style={{ textTransform: 'capitalize', minWidth: '60px' }}>
+              {tx.type === 'buy' ? 'Buy' : 'Sell'}
+            </span>
+            <span style={{ minWidth: '120px' }}>
+              Price: ${Number(tx.price).toFixed(6)}
+            </span>
+            <span style={{ minWidth: '120px', fontStyle: 'italic' }}>
+              Total: ${(tx.price * tx.amount).toFixed(2)}
+            </span>
+            {runner.totalsupply && (
+              <span style={{ minWidth: '150px', fontStyle: 'italic' }}>
+                MC at Tx: ${(tx.price * runner.totalsupply).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+              </span>
+            )}
           </div>
         ))}
       </div>

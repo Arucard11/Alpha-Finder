@@ -11,13 +11,17 @@ import {
   DialogContent,
   DialogActions,
   Tooltip,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import RunnerAccordion from './RunnerAccordion'; // Assuming RunnerAccordion no longer needs computePnl
 import { badgeEmojis, badgeDescriptions } from '../utils/badgeMappings'; // Import both mappings
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 // *** CHANGE HERE: Removed computePnl from props ***
-const WalletAccordion = ({ wallet }) => {
+const WalletAccordion = ({ wallet, useAccordion = false }) => {
   const [open, setOpen] = useState(false);
 
   // Deduplicate runners by address (still potentially useful for display if needed, but not for PnL calc)
@@ -75,7 +79,7 @@ const WalletAccordion = ({ wallet }) => {
           {/* Wallet Address with Copy Icon */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="subtitle2" sx={{ flex: 1, wordBreak: 'break-all' }}>
-              {wallet.address || 'N/A'} {/* Add fallback for address */}
+              {wallet.address || 'N/A'}
             </Typography>
             <IconButton onClick={handleCopy} size="small" sx={{ color: '#00e676' }} disabled={!wallet.address}>
               <ContentCopyIcon />
@@ -109,49 +113,80 @@ const WalletAccordion = ({ wallet }) => {
               );
             })}
           </Box>
-          {/* See Runners Button */}
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5 }}>
-             {/* Disable button if no runners */}
-            <Button
-              variant="contained"
-              size="small"
-              onClick={handleOpenDialog}
+          {useAccordion ? (
+            // Runners Accordion for Search Overlay
+            <Accordion
+              expanded={open}
+              onChange={(_, isExpanded) => setOpen(isExpanded)}
               disabled={!uniqueRunners || uniqueRunners.length === 0}
-              sx={{
-                backgroundColor: '#ff4081',
-                color: '#121212',
-                minWidth: 'auto',
-                '&:disabled': { // Style for disabled state
-                    backgroundColor: 'grey.700',
-                }
-              }}
+              sx={{ backgroundColor: '#333', mt: 1, border: '1px solid rgba(0,230,118,0.3)' }}
             >
-              See Runners ({uniqueRunners.length}) {/* Show count */}
-            </Button>
-          </Box>
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon sx={{ color: '#00e676' }} />}
+                sx={{ backgroundColor: '#272727' }}
+              >
+                <Typography sx={{ color: '#ff4081', fontWeight: 'bold' }}>
+                  See Runners ({uniqueRunners.length})
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ backgroundColor: '#272727', p: 1 }}>
+                {uniqueRunners.length === 0 ? (
+                  <Typography sx={{ color: '#fff' }}>No runners associated with this wallet.</Typography>
+                ) : (
+                  uniqueRunners.map((runner, index) => (
+                    <Box key={runner.address || index} sx={{ mb: 1 }}>
+                      <RunnerAccordion runner={runner} />
+                    </Box>
+                  ))
+                )}
+              </AccordionDetails>
+            </Accordion>
+          ) : (
+            // See Runners Button for Main Dashboard
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5 }}>
+              {/* Disable button if no runners */}
+              <Button
+                variant="contained"
+                size="small"
+                onClick={handleOpenDialog}
+                disabled={!uniqueRunners || uniqueRunners.length === 0}
+                sx={{
+                  backgroundColor: '#ff4081',
+                  color: '#121212',
+                  minWidth: 'auto',
+                  '&:disabled': { // Style for disabled state
+                      backgroundColor: 'grey.700',
+                  }
+                }}
+              >
+                See Runners ({uniqueRunners.length}) {/* Show count */}
+              </Button>
+            </Box>
+          )}
         </Box>
       </Box>
-
-      {/* Dialog Popup for Runner Details */}
-      <Dialog open={open} onClose={handleCloseDialog} fullWidth maxWidth="md">
-        <DialogTitle>Runner Details for Wallet: {wallet.address}</DialogTitle>
-        <DialogContent dividers>
-          {uniqueRunners.map((runner, index) => (
-            <Box key={runner.address || index} sx={{ mb: 2 }}> {/* Use runner.address as key if available */}
-              {/* *** CHANGE HERE: Removed computePnl prop *** */}
-              <RunnerAccordion runner={runner} />
-            </Box>
-          ))}
-           {uniqueRunners.length === 0 && (
-             <Typography>No runners associated with this wallet.</Typography>
-           )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog} variant="contained" color="primary">
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {!useAccordion && (
+        // Dialog Popup for Runner Details in Main Dashboard
+        <Dialog open={open} onClose={handleCloseDialog} fullWidth maxWidth="md">
+          <DialogTitle>Runner Details for Wallet: {wallet.address}</DialogTitle>
+          <DialogContent dividers>
+            {uniqueRunners.map((runner, index) => (
+              <Box key={runner.address || index} sx={{ mb: 2 }}> {/* Use runner.address as key if available */}
+                {/* *** CHANGE HERE: Removed computePnl prop *** */}
+                <RunnerAccordion runner={runner} />
+              </Box>
+            ))}
+             {uniqueRunners.length === 0 && (
+               <Typography>No runners associated with this wallet.</Typography>
+             )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog} variant="contained" color="primary">
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </>
   );
 };

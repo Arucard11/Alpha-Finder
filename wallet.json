@@ -1,0 +1,59 @@
+
+
+{
+    "id": 1,
+    "address": "7SUsmCT51hKrC75zGm8q4coYvz2sRqAVayKjXRyUkuyT",
+    "runners": [
+        {
+            "name": "GREED 3.   This time we all win",
+            "score": 1.6800000000000002,
+            "scored": true,
+            "symbol": "GREED 3",
+            "address": "CPBQqugWWCcyehezHf4uSJtET2kmYNqPuhyb57H5pump",
+            "logouri": "https://ipfs.io/ipfs/QmRF3BNu3VYJJ4QPTVdSg38RA9NKpnmX2k29V7uJVcXrsA",
+            "athprice": "0.004009060090930031",
+            "athmc": "100000000000",
+            "totalsupply": "100000000000",
+            "timestamps": {
+              "maxProfitStart": 1741127820,
+              "maxProfitEnd": 1741127820,
+              "early": 1741099680,
+              "twoMillion": 1741099680,
+              "fiveMillion": null,
+              "tenMillion": null,
+              "twentyMillion": null
+            },
+            "transactions": {
+              "buy": [
+                {
+                  "price": 0.0015862296998492085,
+                  "amount": 26488.831923,
+                  "timestamp": 1741099571
+                },
+                {
+                  "price": 0.0023163206210595816,
+                  "amount": 18402.307391,
+                  "timestamp": 1741099540
+                }
+              ],
+              "sell": [
+                {
+                  "price": 0.0016062418671964668,
+                  "amount": 26488.831923,
+                  "timestamp": 1741099678
+                },
+                {
+                  "price": 0.001447355274979119,
+                  "amount": 18402.307391,
+                  "timestamp": 1741099545
+                }
+              ]
+            }
+          }
+    ],
+    "confidence_score": "0.8400000000000001",
+    "pnl":400,	
+    "badges": [
+      "degen sprayer"
+    ]
+  }

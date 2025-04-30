@@ -1,0 +1,207 @@
+[
+    {
+      "id": 3569,
+      "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+      "name": "Dog Stolen From Tesla",
+      "logouri": "https://ipfs.io/ipfs/QmShJgbwNEpHaL1C5dRdyGvaYyTqPwxBwvQb9Pm25SmgR3",
+      "symbol": "Lemon",
+      "totalsupply": "100000000000",
+      "timestamps": {
+        "late": 1745864700,
+        "early": 1745863920,
+        "allprices": [
+          {
+            "value": 0.00008452809999163417,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863080
+          },
+          {
+            "value": 0.00026345038349741685,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863140
+          },
+          {
+            "value": 0.0007219814393882367,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863200
+          },
+          {
+            "value": 0.00047516118296472864,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863260
+          },
+          {
+            "value": 0.0007169748888434781,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863320
+          },
+          {
+            "value": 0.0009603049739182043,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863380
+          },
+          {
+            "value": 0.0009751898479292119,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863440
+          },
+          {
+            "value": 0.001026775619714396,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863500
+          },
+          {
+            "value": 0.0012584242924356499,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863560
+          },
+          {
+            "value": 0.001347549168470151,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863620
+          },
+          {
+            "value": 0.0013870805336087045,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863680
+          },
+          {
+            "value": 0.0016852441501714627,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863740
+          },
+          {
+            "value": 0.0016809115104397978,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863800
+          },
+          {
+            "value": 0.0015581523824098845,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863860
+          },
+          {
+            "value": 0.0018997654394354929,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863920
+          },
+          {
+            "value": 0.0018250798324296893,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745863980
+          },
+          {
+            "value": 0.002171909868928177,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864040
+          },
+          {
+            "value": 0.002567188543729804,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864100
+          },
+          {
+            "value": 0.0023022847890762617,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864160
+          },
+          {
+            "value": 0.0022522383273568224,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864220
+          },
+          {
+            "value": 0.002724087261757291,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864280
+          },
+          {
+            "value": 0.0028235914621418884,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864340
+          },
+          {
+            "value": 0.002458091535184706,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864400
+          },
+          {
+            "value": 0.0023226543926119702,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864460
+          },
+          {
+            "value": 0.002141389871406959,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864520
+          },
+          {
+            "value": 0.0021717301313154626,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864580
+          },
+          {
+            "value": 0.0023833279643051394,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864640
+          },
+          {
+            "value": 0.003364792495755874,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864700
+          },
+          {
+            "value": 0.00321498593433284,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864760
+          },
+          {
+            "value": 0.002952862017400969,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864820
+          },
+          {
+            "value": 0.0029435752173622796,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864880
+          },
+          {
+            "value": 0.003122241534021599,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745864940
+          },
+          {
+            "value": 0.003556270752341637,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745865000
+          },
+          {
+            "value": 0.0036264692801021544,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745865060
+          },
+          {
+            "value": 0.003312421893605114,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745865120
+          },
+          {
+            "value": 0.003014128900537642,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745865180
+          },
+          {
+            "value": 0.003014128900537642,
+            "address": "CjqxraDuTMEcfhdqY8qEaMY43icdBrkt3EXciNVpump",
+            "unixTime": 1745865240
+          }
+        ],
+        "twoMillion": 1745864040,
+        "fiveMillion": 1745864070
+      },
+      "athprice": "0.0036264692801021544",
+      "athmc": "3626469",
+      "created": "2025-04-28 17:58:11+00",
+      "checked": false
+    }
+  ]

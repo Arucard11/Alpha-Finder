@@ -54,9 +54,14 @@ const SimpleRunnerDisplay = ({ runner }) => {
                 Early: {formatTimestamp(runner.timestamps.early)}
               </Typography>
             )}
-            {runner.timestamps?.late && (
-              <Typography sx={{ color: 'red' }}>
-                Late: {formatTimestamp(runner.timestamps.late)}
+            {runner.timestamps?.maxProfitStart && (
+              <Typography sx={{ color: 'cyan' }}>
+                Max Profit Start: {formatTimestamp(runner.timestamps.maxProfitStart)}
+              </Typography>
+            )}
+            {runner.timestamps?.maxProfitEnd && (
+              <Typography sx={{ color: 'magenta' }}>
+                Max Profit End: {formatTimestamp(runner.timestamps.maxProfitEnd)}
               </Typography>
             )}
           </Box>

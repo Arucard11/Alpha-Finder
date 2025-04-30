@@ -14,22 +14,35 @@ const Dashboard = () => {
   const isAdmin = location.state?.isAdmin || false;
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden' }}>
+    <div>
       <ThreeBackground />
       <Header isAdmin={isAdmin} />
-      <Box sx={{ 
-        display: 'flex', 
+      {/* Main Content (no margin-top needed) */}
+      <Box sx={{
+        width: '100%',
+        overflow: 'visible',
+        p: { xs: 1, sm: 3 },
+        display: 'flex',
         flexDirection: 'column',
-        height: 'calc(100vh - 64px)', // Account for header height
-        position: 'relative',
-        overflow: 'hidden',
-        mt: 0,
-        background: 'linear-gradient(to bottom, #1d1d1d, #2d2d2d)', // Subtle gradient for depth
+        alignItems: 'center',
       }}>
-        <Typography variant="h6" sx={{ color: '#00e676', p: 1, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', backgroundColor: '#272727', borderBottom: '1px solid #00e676', boxShadow: '0px 0px 5px rgba(0,230,118,0.3)' }}>
+        <LeaderboardContainer />
+      </Box>
+      {/* RunnerStats Section (static/relative) */}
+      <Box sx={{
+        width: '100%',
+        maxWidth: '1200px',
+        mx: 'auto',
+        background: 'linear-gradient(to bottom, #1d1d1d, #2d2d2d)',
+        boxShadow: '0px 2px 10px rgba(0,0,0,0.2)',
+        borderBottom: '1px solid #00e676',
+        borderRadius: 2,
+        mt: 3,
+      }}>
+        <Typography variant="h6" sx={{ color: '#00e676', p: 1, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', backgroundColor: '#272727', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderBottom: '1px solid #00e676', boxShadow: '0px 0px 5px rgba(0,230,118,0.3)' }}>
           Runner Stats
         </Typography>
-        <Box sx={{ 
+        <Box sx={{
           width: '100%',
           backgroundColor: '#272727',
           borderBottom: '1px solid #00e676',
@@ -39,7 +52,9 @@ const Dashboard = () => {
           minHeight: '150px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 2
+          gap: 2,
+          borderBottomLeftRadius: 32,
+          borderBottomRightRadius: 32,
         }}>
           <RunnerStats />
           <Box sx={{ width: '100%', overflow: 'hidden', borderTop: '1px solid rgba(0, 230, 118, 0.3)', pt: 1 }}>
@@ -48,18 +63,6 @@ const Dashboard = () => {
             </Typography>
             <RecentLaunches />
           </Box>
-        </Box>
-        <Box sx={{ 
-          width: '100%',
-          height: 'calc(100vh - 64px - 170px - 40px)', // Adjust height based on RunnerStats and title height
-          overflow: 'auto',
-          p: { xs: 1, sm: 3 },
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}>
-          <LeaderboardContainer />
-          <PriceChart />
         </Box>
       </Box>
     </div>

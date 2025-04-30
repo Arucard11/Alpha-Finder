@@ -104,7 +104,19 @@ const RunnerAccordion = ({ runner }) => {
          sx={!canFetchChart ? { opacity: 0.6, cursor: 'default' } : {}} // Style disabled state
       >
         <Typography variant="body1" sx={{ color: '#fff', display: 'flex', alignItems: 'center', gap: 2 }}>
+          {runner?.logouri && (
+            <img 
+              src={runner.logouri} 
+              alt={runnerName}
+              style={{ width: 24, height: 24, borderRadius: '50%' }}
+            />
+          )}
           Runner: {runnerName} ({runnerSymbol}) - Score: {runnerScore.toFixed(2)}
+          {runner?.athmc && (
+            <span style={{ color: '#00e676', marginLeft: '12px' }}>
+              ATH MC: ${Number(runner.athmc).toLocaleString()}
+            </span>
+          )}
           <span style={{ 
             color: totalPnL >= 0 ? '#00e676' : '#ff1744',
             marginLeft: '12px'

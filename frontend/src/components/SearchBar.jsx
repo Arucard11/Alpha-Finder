@@ -15,6 +15,7 @@ const SearchBar = () => {
 
     setLoading(true);
     setShowOverlay(true);
+    console.log('Search overlay triggered', { searchTerm });
 
     try {
       const response = await fetch(`${import.meta.env.VITE_API_ENDPOINT}/leaderboard/lookup`, {
@@ -58,6 +59,7 @@ const SearchBar = () => {
       </Box>
       
       {showOverlay && (
+        console.log('Rendering SearchResultOverlay with results:', searchResults),
         <SearchResultOverlay
           results={searchResults}
           onClose={() => {
