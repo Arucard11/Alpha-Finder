@@ -30,6 +30,6 @@ async function updateData(){
     }
 }
 
-updateData()
+
 
 module.exports = updateData;
