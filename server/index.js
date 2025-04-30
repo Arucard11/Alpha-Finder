@@ -10,6 +10,7 @@ const coins = require("./controllers/coinsController.js")
 const updateData = require("./helpers/updateData.js")
 const admin = require('./routes/admin.js')
 const app = express();
+const setUpDb = require("./DB/createTables.js")
 //https://spectra-78nr.onrender.com,
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -35,8 +36,11 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 app.get(/^\/(?!leaderboard|auth|admin|getprices).*/, (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
- setUpDb();
- updateData()
+ setUpDb().then(()=>{
+  updateData()
+ }).catch((err)=>{
+  console.log(err)
+ })
 cron.schedule('0 */6 * * *', () => {
   updateData()
 }); 
