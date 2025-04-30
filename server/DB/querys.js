@@ -632,18 +632,18 @@ async function getAllFiltered() {
  * @returns {Promise<Object>} The inserted runner record.
  */
 async function addRunner(data) { 
-    const { address, name, timestamps, athprice,symbol,logo_uri,athmc, created_at} = data;
+    const { address, name, timestamps, athprice, symbol, logo_uri, athmc, created_at, totalsupply } = data;
     const sanitizedAddress = sanitizeString(address);
     const sanitizedName = sanitizeString(name);
     const timestamp = JSON.stringify(timestamps)
     
     const query = `
-      INSERT INTO runners (address, name, timestamps, athprice, symbol,logouri, athmc, created)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO runners (address, name, timestamps, athprice, symbol, logouri, athmc, created, totalsupply)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *;
     `;
     try {
-      const result = await pool.query(query, [sanitizedAddress, sanitizedName,timestamp,athprice,symbol,logo_uri,athmc, created_at]);
+      const result = await pool.query(query, [sanitizedAddress, sanitizedName, timestamp, athprice, symbol, logo_uri, athmc, created_at, totalsupply]);
       return result.rows[0];
     } catch (err) {
       console.error('Error inserting runner:', err);
@@ -855,12 +855,11 @@ async function getWalletsContainingRunner(runnerAddress, offset = 0, limit = 50)
 
 async function getBasicRunnerInfo() {
   const query = `
-    SELECT address, logouri, name, symbol, created as created_at
+    SELECT address, logouri, name, symbol, created, athmc
     FROM runners
-    WHERE athmc > 1200000
-    AND created >= NOW() - INTERVAL '30 days'
+    WHERE created >= NOW() - INTERVAL '30 days'
     ORDER BY created DESC
-    LIMIT 10;
+    LIMIT 50;
   `;
   try {
     const result = await pool.query(query);
@@ -918,6 +917,13 @@ async function getRunnerLaunchStats() {
           WHEN day_of_month <= 15 THEN 'early'
           ELSE 'late'
         END
+    ),
+    recent_runners AS (
+      SELECT athmc
+      FROM runners
+      WHERE created >= NOW() - INTERVAL '30 days'
+      AND athmc IS NOT NULL -- Ensure athmc is not null before averaging
+      AND athmc::text ~ '^[0-9]+$' -- Ensure athmc contains only digits before casting
     )
     SELECT 
       json_build_object(
@@ -944,6 +950,14 @@ async function getRunnerLaunchStats() {
             month_part, count
           )
           FROM month_distribution
+        ),
+        'athmc_stats', (
+          SELECT json_build_object(
+            'median', PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY athmc::numeric),
+            'p25', PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY athmc::numeric),
+            'p75', PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY athmc::numeric)
+          )
+          FROM recent_runners
         )
       ) as stats;
   `;

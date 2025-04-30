@@ -32,9 +32,13 @@ CREATE TABLE IF NOT EXISTS runners (
     timestamps JSONB NOT NULL,
     athprice NUMERIC NOT NULL,
     athmc NUMERIC,
+    totalsupply NUMERIC,
     created TIMESTAMPTZ,
     checked BOOLEAN NOT NULL DEFAULT FALSE 
 );
+
+-- Add index for faster lookups on the 'checked' column
+CREATE INDEX IF NOT EXISTS idx_runners_checked ON runners (checked);
 
 -- Create filtered table
 CREATE TABLE IF NOT EXISTS filtered (
@@ -53,12 +57,15 @@ CREATE TABLE IF NOT EXISTS filtered (
 async function setUpDb(){
   await pool.query(createTablesQuery)
     .then(() => {
-      console.log('Tables created successfully.');
-    }).finally(()=>{
-      pool.end()
-    })
+      console.log('Tables created successfully (including checked index).');
+    })/*.finally(()=>{
+      // Do not end the pool here; it should stay open for the application.
+      // pool.end()
+    })*/
     .catch(err => {
       console.error('Error creating tables:', err);
+      // Re-throw the error so the calling function knows setup failed
+      throw err; 
     })
     
 }

@@ -5,7 +5,7 @@ async function convertWallets(coin) {
   
   // Destructure coin.mintInfo to use as a template for runner info.
   const { mintInfo } = coin;
-  const { address, name, symbol, logouri, millionTimeStamp, athprice, timestamps,athmc } = mintInfo;
+  const { address, name, symbol, logouri, millionTimeStamp, athprice, timestamps, athmc, totalsupply } = mintInfo;
   
   // Group transactions by wallet address.
   // Each key (except "mintInfo") in the coin object represents a wallet address.
@@ -29,7 +29,7 @@ async function convertWallets(coin) {
       
       // Build runner objects for each set of transactions for this wallet.
       const runners = walletGroups[walletAddress].map(transactions => {
-        return { address, name, symbol, logouri, millionTimeStamp, transactions, athprice, timestamps,athmc };
+        return { address, name, symbol, logouri, millionTimeStamp, transactions, athprice, timestamps, athmc, totalsupply };
       });
       
       if (oldWallet) {

@@ -5,15 +5,73 @@ const { getTotalRunners, updateWallet, addWallet } = require('../DB/querys.js');
 const { connection } = require('./connection.js');
 const { PublicKey } = require('@solana/web3.js');
 
+// Helper function for retrying async operations
+async function retryAsyncOperation(fn, maxAttempts = 3, delayMs = 1000, context = '') {
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    attempts++;
+    try {
+      return await fn();
+    } catch (error) {
+      const isLastError = attempts === maxAttempts;
+      const errorCode = error.code; // Specific code for SolanaJSONRPCError or system errors
+      const isRetriableSolanaError = errorCode === -32019; // "Failed to query long-term storage"
+      const isConnectionReset = errorCode === 'ECONNRESET'; // Connection reset by peer
+      const isTimeout = errorCode === 'ETIMEDOUT'; // Connection timed out
+
+      // Check if it's a fetch error with a 5xx status code
+      // Note: The original fetch call might throw before providing a response object (e.g., network error)
+      // So we need to handle cases where error.response might not exist.
+      let isHttpServerError = false;
+      if (error.response && typeof error.response.status === 'number' && error.response.status >= 500 && error.response.status < 600) {
+        isHttpServerError = true;
+      }
+
+      // More comprehensive check for retriable conditions
+      const shouldRetry = !isLastError && (
+        isRetriableSolanaError ||
+        isConnectionReset ||
+        isTimeout ||
+        isHttpServerError ||
+        error.message.includes('fetch failed') || // Generic fetch failure
+        error.message.includes('network error') // Generic network failure
+        // Keep ETIMEDOUT check for robustness, though it might be covered by others
+      );
+
+      if (shouldRetry) {
+        const statusInfo = isHttpServerError ? ` (Status: ${error.response.status})` : '';
+        const codeInfo = errorCode ? ` (Code: ${errorCode})` : '';
+        console.warn(`Attempt ${attempts} failed for ${context}${statusInfo}${codeInfo}. Retrying in ${delayMs}ms... Error: ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        delayMs *= 2; // Optional: exponential backoff
+      } else {
+        const statusInfo = (error.response && error.response.status) ? ` (Status: ${error.response.status})` : '';
+         const codeInfo = errorCode ? ` (Code: ${errorCode})` : '';
+        console.error(`Final attempt ${attempts} failed for ${context}${statusInfo}${codeInfo}. Error: ${error.message}`);
+        // Optionally log the full error object for more details on final failure
+        // console.error("Full error object:", error); 
+        throw error; // Re-throw the error if it's the last attempt or not a retriable error
+      }
+    }
+  }
+  // Should not be reached if maxAttempts > 0, but satisfies typescript/linting if it expects a return path
+  throw new Error(`Operation failed after ${maxAttempts} attempts for context: ${context}`);
+}
+
 /**
  * Wallet helper: checks if the wallet is inactive (dead) for over 30 days.
  * Looks at the timestamp of the latest transaction.
  */
 async function checkIfDeadWallet(address) {
   try {
-    const signatures = await connection.getSignaturesForAddress(
-      new PublicKey(address),
-      { limit: 1 } // Only need the latest signature
+    const signatures = await retryAsyncOperation(
+      () => connection.getSignaturesForAddress(
+        new PublicKey(address),
+        { limit: 1 } // Only need the latest signature
+      ),
+      3, // maxAttempts
+      1000, // initialDelayMs
+      `getSignaturesForAddress (dead check) for ${address}`
     );
 
     if (!signatures || signatures.length === 0 || !signatures[0].blockTime) {
@@ -32,8 +90,8 @@ async function checkIfDeadWallet(address) {
     return latestTxTimestampMs < thirtyDaysAgoTimestampMs;
 
   } catch (error) {
-    console.error(`Error fetching signatures for ${address} in checkIfDeadWallet:`, error);
-    // If there's an error fetching (e.g., invalid address), assume not dead
+    console.error(`Failed checkIfDeadWallet for ${address} after retries:`, error);
+    // If there's an error fetching (e.g., invalid address or final retry failure), assume not dead
     return false;
   }
 }
@@ -47,9 +105,14 @@ async function checkIfComebackTrader(address) {
     const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
     const thirtyDaysAgoTimestampSec = (Date.now() - THIRTY_DAYS_MS) / 1000; // Work in seconds
 
-    const signatures = await connection.getSignaturesForAddress(
-      new PublicKey(address),
-      { limit: 100 }
+    const signatures = await retryAsyncOperation(
+      () => connection.getSignaturesForAddress(
+        new PublicKey(address),
+        { limit: 100 }
+      ),
+      3, // maxAttempts
+      1000, // initialDelayMs
+      `getSignaturesForAddress (comeback check) for ${address}`
     );
 
     if (!signatures || signatures.length === 0) {
@@ -65,35 +128,33 @@ async function checkIfComebackTrader(address) {
     return totalOldTxns >= 50;
 
   } catch (error) {
-    console.error(`Error fetching signatures for ${address} in checkIfComebackTrader:`, error);
+    console.error(`Failed checkIfComebackTrader for ${address} after retries:`, error);
+    // If final retry fails, assume not a comeback trader
     return false;
   }
 }
 
-
 /**
- * Returns how many runners are held past the 'late' threshold.
+ * Returns how many runners had sells after the $5M market cap timestamp.
  */
-function totalRunnersHeldPastLate(runners) {
+function totalRunnersSoldPastFiveMillion(runners) {
   let total = 0;
-  const nowSec = Math.floor(Date.now() / 1000);
+  // No need for nowSec as we check specific sell timestamps against the $5M timestamp
 
   for (const runner of runners) {
-    const tLate = runner.timestamps?.late;
-    const hasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
+    // Check for the fiveMillion timestamp
+    const tFiveMillion = runner.timestamps?.fiveMillion;
+    const sells = runner.transactions?.sell;
 
-    if (tLate == null) continue;
+    // Skip if $5M timestamp is missing or no sells occurred
+    if (tFiveMillion == null || !sells || sells.length === 0) continue;
 
-    let heldPast = false;
-    if (!hasSells) {
-      if (nowSec > tLate) heldPast = true;
-    } else {
-      if (runner.transactions.sell.some(s => s.timestamp != null && s.timestamp > tLate)) {
-        heldPast = true;
-      }
+    // Check if at least one sell occurred after the $5M timestamp
+    const soldPastFiveM = sells.some(s => s.timestamp != null && s.timestamp > tFiveMillion);
+
+    if (soldPastFiveM) {
+        total++;
     }
-
-    if (heldPast) total++;
   }
   return total;
 }
@@ -210,32 +271,54 @@ function computeEarlyBuyPoints(runner) {
 }
 
 function computeHoldingMultiplier(runner) {
-    const tLate = runner.timestamps?.late;
+    const tEarly = runner.timestamps?.early;
+    const tMaxProfitStart = runner.timestamps?.maxProfitStart;
+    const tMaxProfitEnd = runner.timestamps?.maxProfitEnd;
     const tTwoMillion = runner.timestamps?.twoMillion;
     const tFiveMillion = runner.timestamps?.fiveMillion;
+    const tTenMillion = runner.timestamps?.tenMillion;
+    const tTwentyMillion = runner.timestamps?.twentyMillion;
+
     let maxMultiplier = 1.0;
     const sells = runner.transactions?.sell;
+
     if (sells && sells.length > 0) {
         let achievedMultiplier = 0.7;
         for (const sell of sells) {
              if (sell.timestamp == null) continue;
+
             let currentSellMultiplier = 0.7;
-            if (tFiveMillion != null && sell.timestamp >= tFiveMillion) currentSellMultiplier = 1.5;
-            else if (tTwoMillion != null && sell.timestamp >= tTwoMillion) currentSellMultiplier = 1.2;
-            else if (tLate != null && sell.timestamp >= tLate) currentSellMultiplier = 1.0;
+
+            if (tMaxProfitStart != null && tMaxProfitEnd != null && sell.timestamp >= tMaxProfitStart && sell.timestamp <= tMaxProfitEnd) {
+                currentSellMultiplier = 2.5;
+            }
+            else if (tTwentyMillion != null && sell.timestamp > tTwentyMillion) currentSellMultiplier = 2.2;
+            else if (tTenMillion != null && sell.timestamp > tTenMillion) currentSellMultiplier = 2.0;
+            else if (tFiveMillion != null && sell.timestamp > tFiveMillion) currentSellMultiplier = 1.8;
+            else if (tTwoMillion != null && sell.timestamp > tTwoMillion) currentSellMultiplier = 1.5;
+            else if (tMaxProfitEnd != null && sell.timestamp > tMaxProfitEnd) currentSellMultiplier = 0.9;
+
             achievedMultiplier = Math.max(achievedMultiplier, currentSellMultiplier);
         }
         maxMultiplier = achievedMultiplier;
+    } else {
+         maxMultiplier = 1.0;
     }
     return maxMultiplier;
 }
 
 function computeConvictionBonus(runner) {
-    const tLate = runner.timestamps?.late;
+    const tMaxProfitStart = runner.timestamps?.maxProfitStart;
+    const tMaxProfitEnd = runner.timestamps?.maxProfitEnd;
     const tTwoMillion = runner.timestamps?.twoMillion;
+    const tFiveMillion = runner.timestamps?.fiveMillion;
+    const tTenMillion = runner.timestamps?.tenMillion;
+    const tTwentyMillion = runner.timestamps?.twentyMillion;
+
     let bonus = 1.0;
     const hasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
     const buys = runner.transactions?.buy;
+
     if (!hasSells) {
         if (!buys || buys.length === 0) return 1.0;
         const validBuyTimestamps = buys.map(b => b.timestamp).filter(ts => ts != null);
@@ -244,15 +327,25 @@ function computeConvictionBonus(runner) {
         const nowSec = Math.floor(Date.now() / 1000);
         const NINETY_DAYS_SEC = 90 * 24 * 60 * 60;
         const maxBuyValue = Math.max(0, ...buys.map(b => (b.amount || 0) * (b.price || 0)));
+
         if (maxBuyValue < 5 && maxBuyValue > 0) bonus = 1.0;
         else bonus = (nowSec - latestBuyTimestamp <= NINETY_DAYS_SEC) ? 1.5 : 1.2;
+
     } else {
         let achievedBonus = 0.8;
         for (const sell of runner.transactions.sell) {
              if (sell.timestamp == null) continue;
+
             let currentSellBonus = 0.8;
-            if (tTwoMillion != null && sell.timestamp >= tTwoMillion) currentSellBonus = 1.2;
-            else if (tLate != null && sell.timestamp >= tLate) currentSellBonus = 1.0;
+            if (tMaxProfitStart != null && tMaxProfitEnd != null && sell.timestamp >= tMaxProfitStart && sell.timestamp <= tMaxProfitEnd) {
+                currentSellBonus = 1.5;
+            }
+            else if (tTwentyMillion != null && sell.timestamp > tTwentyMillion) currentSellBonus = 1.3;
+            else if (tTenMillion != null && sell.timestamp > tTenMillion) currentSellBonus = 1.2;
+            else if (tFiveMillion != null && sell.timestamp > tFiveMillion) currentSellBonus = 1.1;
+            else if (tTwoMillion != null && sell.timestamp > tTwoMillion) currentSellBonus = 1.0;
+            else if (tMaxProfitEnd != null && sell.timestamp > tMaxProfitEnd) currentSellBonus = 0.9;
+
             achievedBonus = Math.max(achievedBonus, currentSellBonus);
         }
         bonus = achievedBonus;
@@ -262,19 +355,27 @@ function computeConvictionBonus(runner) {
 
 function computeEarlyExitPenalty(runner) {
     const tEarly = runner.timestamps?.early;
-    const tLate = runner.timestamps?.late;
+    const tMaxProfitStart = runner.timestamps?.maxProfitStart;
     const sells = runner.transactions?.sell;
-    if (!sells || sells.length === 0 || tEarly == null || tLate == null || tLate <= tEarly) return 0;
+
+    if (!sells || sells.length === 0 || tEarly == null || tMaxProfitStart == null || tMaxProfitStart <= tEarly) return 0;
+
     let maxPenaltyFraction = 0;
-    const timeWindow = tLate - tEarly;
+    const timeWindow = tMaxProfitStart - tEarly;
     if (timeWindow <= 0) return 0;
+
     for (const sell of sells) {
         if (sell.timestamp == null) continue;
-        if (sell.timestamp < tLate) {
-            const fractionSkipped = (tLate - sell.timestamp) / timeWindow;
+
+        if (sell.timestamp < tMaxProfitStart) {
+            const fractionSkipped = (tMaxProfitStart - sell.timestamp) / timeWindow;
+
             let currentPenalty = 0;
             if (fractionSkipped > 0.75) currentPenalty = 0.40;
             else if (fractionSkipped > 0.50) currentPenalty = 0.30;
+            else if (fractionSkipped > 0.25) currentPenalty = 0.20;
+            else if (fractionSkipped > 0) currentPenalty = 0.10;
+
             maxPenaltyFraction = Math.max(maxPenaltyFraction, currentPenalty);
         }
     }
@@ -286,6 +387,9 @@ function computeEarlyExitPenalty(runner) {
  * Returns an object with the count of unique coins bought and runners in the 90-day window.
  */
 async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
+    // Ensure runners is an array before proceeding
+    const safeRunners = Array.isArray(runners) ? runners : [];
+    
     const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
     const ninetyDaysAgoMs = Date.now() - NINETY_DAYS_MS;
     let uniqueCoinsBought = new Set();
@@ -298,8 +402,57 @@ async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
         // Fetch transactions until we cover 90 days or no more data
         while (true) {
             const url = `https://public-api.birdeye.so/v1/wallet/tx_list?wallet=${walletAddress}&limit=${limit}${beforeParam ? `&before=${beforeParam}` : ''}`;
-            const response = await fetch(url, apiOptions);
-            const data = await response.json();
+            
+            let response;
+            try {
+                response = await retryAsyncOperation(
+                    () => fetch(url, apiOptions),
+                    3, // maxAttempts
+                    1000, // initialDelayMs
+                    `fetch Birdeye tx_list for ${walletAddress} (before=${beforeParam || ''})`
+                );
+
+                // If retryAsyncOperation completes without throwing, but the response is still not ok,
+                // it means the final attempt resulted in a non-5xx error (e.g., 4xx).
+                if (!response.ok) {
+                    console.error(`Birdeye API request for ${walletAddress} failed permanently after retries with status ${response.status}: ${response.statusText}. URL: ${url}`);
+                    // Attempt to read body for more details, but don't let it crash the loop
+                    try {
+                        const errorBody = await response.text();
+                        console.error(`Error response body (truncated): ${errorBody.substring(0, 500)}`);
+                    } catch (bodyError) {
+                        console.error(`Could not read error response body after non-OK status.`);
+                    }
+                    break; // Stop fetching for this wallet if a permanent error occurs
+                }
+
+            } catch (fetchError) {
+                // This catch block now specifically handles errors thrown by retryAsyncOperation
+                // after all retries have failed (likely due to persistent 5xx, network issues, or connection resets).
+                console.error(`Final fetch attempt failed for Birdeye tx_list for ${walletAddress} after retries. Error: ${fetchError.message}. URL: ${url}`);
+                // Optionally log the full error if needed for debugging
+                // console.error("Full fetch error object:", fetchError);
+                break; // Break loop if fetch fails definitively
+            }
+            
+            let data;
+            try {
+                data = await response.json();
+            } catch (parseError) {
+                // Handle JSON parsing errors specifically
+                let responseText = '';
+                try {
+                    // Try to get the text that failed to parse
+                    responseText = await response.text();
+                } catch (textError) {
+                    // Ignore error if reading text also fails
+                }
+                console.error(`Error parsing JSON for wallet ${walletAddress} from URL ${url}. Status: ${response.status}. Error: ${parseError.message}`);
+                if (responseText) {
+                    console.error("Received non-JSON response body (truncated):", responseText.substring(0, 500));
+                }
+                break; // Break the loop if JSON parsing fails
+            }
 
             if (!data.success || !data.data.solana || data.data.solana.length === 0) {
                 break;
@@ -310,6 +463,11 @@ async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
 
             // Check if the oldest transaction is still within 90 days; if so, fetch more
             const lastTx = transactions[transactions.length - 1];
+            // Add safety check for blockTime existence
+            if (!lastTx || !lastTx.blockTime) {
+                console.warn(`Transaction missing blockTime for wallet ${walletAddress}, stopping pagination.`);
+                break;
+            }
             const lastTxTimeMs = new Date(lastTx.blockTime).getTime();
             if (lastTxTimeMs > ninetyDaysAgoMs) {
                 beforeParam = lastTx.txHash;
@@ -320,12 +478,15 @@ async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
 
         // Filter transactions for buys within 90 days and collect unique tokens
         for (const tx of allTransactions) {
+            // Add safety check for blockTime existence
+            if (!tx.blockTime) continue;
             const txTimeMs = new Date(tx.blockTime).getTime();
             if (txTimeMs < ninetyDaysAgoMs) continue;
 
             // Infer buy transaction if balanceChange shows positive amount for a token (not SOL)
             if (tx.balanceChange) {
                 for (const change of tx.balanceChange) {
+                    // Check if amount is positive and address is not SOL
                     if (change.amount > 0 && change.address !== 'So11111111111111111111111111111111111111112') {
                         uniqueCoinsBought.add(change.address);
                     }
@@ -334,7 +495,7 @@ async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
         }
 
         // Count runners with early timestamp in the last 90 days
-        for (const runner of runners) {
+        for (const runner of safeRunners) {
             const earlyTimestamp = runner.timestamps?.early;
             if (earlyTimestamp && earlyTimestamp * 1000 >= ninetyDaysAgoMs) {
                 runnersInWindow++;
@@ -346,7 +507,8 @@ async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
             runnersInWindow: runnersInWindow
         };
     } catch (error) {
-        console.error(`Error fetching 90-day activity for wallet ${walletAddress}:`, error);
+        // Catch any unexpected errors in the outer try block
+        console.error(`Unexpected error in getWalletActivityIn90Days for wallet ${walletAddress}:`, error);
         return {
             uniqueCoinsBoughtCount: 0,
             runnersInWindow: 0
@@ -376,173 +538,268 @@ async function scoreWallets(convertedWallets) {
     method: 'GET',
     headers: {accept: 'application/json', 'x-chain': 'solana', 'X-API-KEY': `${process.env.BIRDEYE_API_KEY}`},
   };
-  const concurrencyLimit = 5;
+  const concurrencyLimit = 3;
   console.log(`Starting scoring for ${convertedWallets.length} wallets...`);
 
   // Worker function for a single wallet
   async function processWallet(wallet) {
+    // Ensure wallet and wallet.runners are valid
+    if (!wallet || !wallet.address) {
+        console.warn("Skipping processing: Invalid wallet object provided.", wallet);
+        return null; // Skip this wallet
+    }
+    if (!Array.isArray(wallet.runners)) {
+        console.warn(`Wallet ${wallet.address} has invalid or missing runners property. Initializing as empty array.`);
+        wallet.runners = [];
+    }
+
     let totalWalletTokens = 0;
-    let runnersIn90Days = 0;
     let badgedWallet = wallet;
+    badgedWallet.badges = badgedWallet.badges || []; // Ensure badges array exists
+
     try {
       const activityData = await getWalletActivityIn90Days(wallet.address, wallet.runners, options);
-      totalWalletTokens = activityData.uniqueCoinsBoughtCount || 100;
-      runnersIn90Days = activityData.runnersInWindow;
+      totalWalletTokens = activityData.uniqueCoinsBoughtCount || 0; // Default to 0 if undefined
     } catch (e) {
       console.error("Error fetching 90-day activity for wallet:", e);
-      totalWalletTokens = 100;
+      totalWalletTokens = 0; // Assume 0 if fetch fails
     }
-    badgedWallet.badges = badgedWallet.badges || [];
+
     const runnerCount = badgedWallet.runners.length;
+
+    // --- Ratio-Based Badge Calculation --- START
+    const NINETY_DAYS_SEC = 90 * 24 * 60 * 60;
+    const ninetyDaysAgoSec = Math.floor(Date.now() / 1000) - NINETY_DAYS_SEC;
+
+    const runnersWithRecentBuysCount = badgedWallet.runners.filter(runner => 
+        runner.transactions?.buy?.some(buy => 
+            typeof buy.timestamp === 'number' && buy.timestamp >= ninetyDaysAgoSec
+        )
+    ).length;
+
+    const ratio = totalWalletTokens > 0 ? (runnersWithRecentBuysCount / totalWalletTokens) * 100 : 0; 
+
+    let targetPercentageBadge = null;
+    if (runnerCount > 1) { // Only assign these if not a one-hit wonder
+        if (ratio > 90) targetPercentageBadge = 'ultimate trader';
+        else if (ratio > 80) targetPercentageBadge = 'elite trader';
+        else if (ratio > 70) targetPercentageBadge = 'grandmaster trader';
+        else if (ratio > 60) targetPercentageBadge = 'master trader';
+        else if (ratio > 50) targetPercentageBadge = 'expert trader';
+        else if (ratio > 40) targetPercentageBadge = 'highly specialized trader';
+        else if (ratio > 30) targetPercentageBadge = 'specialized trader';
+        else if (ratio > 20) targetPercentageBadge = 'focused trader';
+        else if (ratio > 4) targetPercentageBadge = 'potential alpha'; // Ratio <= 20%
+        else if (ratio >= 2) targetPercentageBadge = 'mid trader';      // Ratio <= 4%
+        else targetPercentageBadge = 'degen sprayer';                  // Ratio < 2%
+    }
+    
+    // Define all badges in this category + conflicting ones
+    const percentageBadgesToRemove = [
+        'ultimate trader', 'elite trader', 'grandmaster trader', 'master trader', 
+        'expert trader', 'highly specialized trader', 'specialized trader', 
+        'focused trader', 'potential alpha', 'mid trader', 'degen sprayer',
+        'one hit wonder' // Keep removing one hit wonder
+    ];
+
+    // Clean existing badges before adding the new one
+    if (targetPercentageBadge) {
+        badgedWallet.badges = badgedWallet.badges.filter(b => !percentageBadgesToRemove.includes(b));
+        badgedWallet.badges.push(targetPercentageBadge);
+    }
+    // --- Ratio-Based Badge Calculation --- END
+
+
+    // --- Other Badge Logic --- START
     // 1) One-Hit Wonder (check this first)
     if (runnerCount === 1) {
-      badgedWallet.badges.push('one hit wonder');
-      // Early return since one-hit wonders shouldn't get other badges
-      return await finalizeWallet(badgedWallet);
+        // Ensure it doesn't conflict with previously assigned percentage badges (shouldn't happen due to logic above, but good practice)
+        if (!badgedWallet.badges.includes('one hit wonder')) {
+             // Still clean potentially conflicting percentage badges if assigning one hit wonder
+             badgedWallet.badges = badgedWallet.badges.filter(b => !percentageBadgesToRemove.includes(b)); 
+             badgedWallet.badges.push('one hit wonder');
+        }
     }
     // 2) Legendary Buyer
-    if (runnerCount >= 10) {
-      badgedWallet.badges.push('legendary buyer');
+    else if (runnerCount >= 10) {
+        // Now, simply add legendary buyer if the condition is met, regardless of percentage badges.
+        if (!badgedWallet.badges.includes('legendary buyer')) {
+            badgedWallet.badges.push('legendary buyer');
+        } 
     }
-    // New Ratio-Based Badges for 90-Day Activity
-    else if (totalWalletTokens > 0) {
-      const ratio = (runnersIn90Days / totalWalletTokens) * 100;
-      if (ratio > 90) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('ultimate trader');
-      } else if (ratio > 80) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('elite trader');
-      } else if (ratio > 70) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('grandmaster trader');
-      } else if (ratio > 60) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('master trader');
-      } else if (ratio > 50) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('expert trader');
-      } else if (ratio > 40) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('highly specialized trader');
-      } else if (ratio > 30) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('specialized trader');
-      } else if (ratio > 20) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer', 'potential alpha'].includes(b));
-        badgedWallet.badges.push('focused trader');
-      } else if (ratio > 4 && ratio <= 20) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !['one hit wonder', 'mid trader', 'degen sprayer'].includes(b));
-        badgedWallet.badges.push('potential alpha');
-      } else if (ratio <= 4 && ratio >= 2) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder' && b !== 'degen sprayer');
-        badgedWallet.badges.push('mid trader');
-      } else if (ratio < 2) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder');
-        badgedWallet.badges.push('degen sprayer');
-      }
-    }
+    
+    // Note: The old ratio-based badge assignment block is removed.
+
     // 4) High Conviction
     else if (
       badgedWallet.runners.some(runner =>
-        runner.transactions.sell.some(sell =>
-          runner.timestamps?.twoMillion && sell.timestamp > runner.timestamps.twoMillion
+        runner.transactions?.sell?.some(sell =>
+          runner.timestamps?.twoMillion != null && sell.timestamp != null && sell.timestamp > runner.timestamps.twoMillion
         )
       )
     ) {
-      badgedWallet.badges.push('high conviction');
+       if (!badgedWallet.badges.includes('high conviction')) badgedWallet.badges.push('high conviction');
     }
-    // 7) Diamond Hands (multiple runners held past 'late')
-    else if (totalRunnersHeldPastLate(badgedWallet.runners) >= 2) {
-      badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder');
-      badgedWallet.badges.push('diamond hands');
+    // 7) Diamond Hands (Redefined: multiple runners sold past '$5M')
+    else if (totalRunnersSoldPastFiveMillion(badgedWallet.runners) >= 2) {
+        if (!badgedWallet.badges.includes('diamond hands')) badgedWallet.badges.push('diamond hands');
     }
     // 8) Whale Buyer
     else if (
       badgedWallet.runners.some(runner =>
-        (runner.transactions.buy.some(b => b.amount * b.price >= 5000)) ||
-        (runner.transactions.sell.some(s => s.amount * s.price >= 5000))
+        (runner.transactions?.buy?.some(b => (b.amount || 0) * (b.price || 0) >= 5000)) ||
+        (runner.transactions?.sell?.some(s => (s.amount || 0) * (s.price || 0) >= 5000))
       )
     ) {
-      badgedWallet.badges.push('whale buyer');
+       if (!badgedWallet.badges.includes('whale buyer')) badgedWallet.badges.push('whale buyer');
     }
     // 9) Dead Wallet
     else if (await checkIfDeadWallet(badgedWallet.address)) {
-      badgedWallet.badges.push('dead wallet');
+       if (!badgedWallet.badges.includes('dead wallet')) badgedWallet.badges.push('dead wallet');
     }
     // 10) Comeback Trader
     else if (await checkIfComebackTrader(badgedWallet.address)) {
-      badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'dead wallet');
-      badgedWallet.badges.push('comeback trader');
+       // Ensure it doesn't add if 'dead wallet' is present (checkIfComebackTrader might need adjustment if dead wallets can be comebacks)
+       if (!badgedWallet.badges.includes('dead wallet') && !badgedWallet.badges.includes('comeback trader')) {
+           badgedWallet.badges.push('comeback trader');
+       }
     }
+    // --- Other Badge Logic --- END
+
+
     // Final cleanup - remove duplicates and ensure one hit wonder is removed if multiple runners
     if (runnerCount > 1) {
       badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder');
     }
     badgedWallet.badges = [...new Set(badgedWallet.badges)];
-    // --- Calculate token scores, wallet score, and PnL ---
+
+    // --- Calculate token scores, wallet score, and PnL --- 
     let totalWalletBuyValue = 0;
     let totalWalletSellValue = 0;
     for (const runner of badgedWallet.runners) {
-      if (runner.scored) {
-        (runner.transactions?.buy || []).forEach(buy => {
-          totalWalletBuyValue += (buy.amount || 0) * (buy.price || 0);
-        });
-        (runner.transactions?.sell || []).forEach(sell => {
-          totalWalletSellValue += (sell.amount || 0) * (sell.price || 0);
-        });
-        continue;
-      }
+      // --- Calculate Runner PnL First --- START
+      let runnerBuyValue = 0;
+      let runnerSellValue = 0;
       (runner.transactions?.buy || []).forEach(buy => {
-        totalWalletBuyValue += (buy.amount || 0) * (buy.price || 0);
+        runnerBuyValue += (buy.amount || 0) * (buy.price || 0);
       });
       (runner.transactions?.sell || []).forEach(sell => {
-        totalWalletSellValue += (sell.amount || 0) * (sell.price || 0);
+        runnerSellValue += (sell.amount || 0) * (sell.price || 0);
       });
+      const runnerPnl = runnerSellValue - runnerBuyValue;
+      runner.pnl = isNaN(runnerPnl) ? 0 : runnerPnl; // Store runner PnL
+
+      // Add runner values to wallet totals *after* calculating runner PnL
+      totalWalletBuyValue += runnerBuyValue;
+      totalWalletSellValue += runnerSellValue;
+       // --- Calculate Runner PnL First --- END
+
+      if (runner.scored) {
+        continue; // Ensure wallet totals still include scored runners if run multiple times
+      }
+
       const hasBuys = runner.transactions?.buy && runner.transactions.buy.length > 0;
       const hasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
+
+      // Default score for buy-only runners
       if (hasBuys && !hasSells) {
-        runner.score = 2;
+        runner.score = 2; // Keep default score for holders without sells yet
         runner.scored = true;
         continue;
       }
+
+      // Check for bot behavior
       if (isPotentialSandwichBot(runner, sandwichConfig)) {
         if (!badgedWallet.badges.includes('bot')) {
           badgedWallet.badges.push('bot');
+          // Maybe apply a score penalty directly for bots? For now, just badge.
         }
       }
+
+      // Calculate scoring components using updated functions
       const earlyBuyPoints = computeEarlyBuyPoints(runner);
       const holdingMultiplier = computeHoldingMultiplier(runner);
       const convictionBonus = computeConvictionBonus(runner);
       const earlyExitPenalty = computeEarlyExitPenalty(runner);
-      const baseScore = earlyBuyPoints * holdingMultiplier * convictionBonus;
+
+      // --- PnL Multiplier Logic --- START
+      let pnlMultiplier = 1.0;
+      if (runnerBuyValue > 0.01) { // Avoid division by zero or tiny values
+          const pnlPercentage = runner.pnl / runnerBuyValue;
+          if (runner.pnl < 0) {
+              // Negative PnL reduces score, scale based on percentage loss
+              // e.g., -100% PnL -> 0 multiplier? Too harsh. Let's cap reduction.
+              // Map [-Infinity, 0] PnL percentage to [0.1, 1.0] multiplier
+               pnlMultiplier = Math.max(0.1, 1 + pnlPercentage); // e.g., -50% -> 0.5 multiplier
+          } else {
+              // Positive PnL increases score, scale based on percentage gain
+              // Map [0, +Infinity] PnL percentage to [1.0, 2.0] multiplier (capped)
+              pnlMultiplier = Math.min(2.0, 1 + pnlPercentage / 2); // e.g., +100% (1.0) -> 1.5 multiplier, +200% (2.0) -> 2.0 multiplier
+          }
+      } else if (runner.pnl < -0.01) { // Handle negative PnL even if buy value is near zero (e.g., fees)
+            pnlMultiplier = 0.5; // Apply a moderate penalty
+      }
+      // --- PnL Multiplier Logic --- END
+
+      // Calculate base score including PnL effect
+      const baseScore = earlyBuyPoints * holdingMultiplier * convictionBonus * pnlMultiplier;
+
+      // Apply early exit penalty
       const finalTokenScore = baseScore * (1 - earlyExitPenalty);
+
       runner.score = isNaN(finalTokenScore) ? 0 : finalTokenScore;
       runner.scored = true;
     }
+
+    // Calculate overall wallet PnL (sum of runner buy/sell values)
     badgedWallet.pnl = totalWalletSellValue - totalWalletBuyValue;
     if (isNaN(badgedWallet.pnl)) badgedWallet.pnl = 0;
+
+    // Calculate wallet confidence score (based on runner scores and success rate)
     const sumTokenScores = badgedWallet.runners.reduce((acc, r) => acc + (r.score || 0), 0);
+
+    // --- Success Rate Calculation (Updated) --- START
     let boughtBelowCount = 0;
     let successCount = 0;
     const nowSecWallet = Math.floor(Date.now() / 1000);
+
     for (const runner of badgedWallet.runners) {
-      const tEarly = runner.timestamps?.early; const tLate = runner.timestamps?.late;
-      if (tEarly == null || tLate == null) continue;
+      const tEarly = runner.timestamps?.early;
+      const tMaxProfitStart = runner.timestamps?.maxProfitStart;
+      const tMaxProfitEnd = runner.timestamps?.maxProfitEnd;
+
+      if (tEarly == null || tMaxProfitStart == null || tMaxProfitEnd == null) continue;
+
       const anyBuyEarly = runner.transactions?.buy?.some(b => b.timestamp != null && b.timestamp <= tEarly);
-      if (!anyBuyEarly) continue;
-      boughtBelowCount++;
-      let heldPastLate = false;
+      if (!anyBuyEarly) continue; // Didn't buy early enough
+
+      boughtBelowCount++; // Count this runner as having bought early
+
+      // Check if SOLD WITHIN the max profit zone
+      let soldInZone = false;
       const runnerHasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
-      if (!runnerHasSells) { if (nowSecWallet > tLate) heldPastLate = true; }
-      else { if (runner.transactions.sell.some(s => s.timestamp != null && s.timestamp > tLate)) heldPastLate = true; }
-      if (heldPastLate) successCount++;
+
+      if (runnerHasSells) {
+          // Success is having at least one sell *within* the zone
+          if (runner.transactions.sell.some(s => s.timestamp != null && s.timestamp >= tMaxProfitStart && s.timestamp <= tMaxProfitEnd)) {
+              soldInZone = true;
+          }
+      }
+      // Holding past the zone is no longer considered a success for this metric
+
+      if (soldInZone) successCount++; // Count as successful sell timing
     }
+    // --- Success Rate Calculation (Updated) --- END
+
     const successRate = boughtBelowCount > 0 ? (successCount / boughtBelowCount) * 100 : 0;
+
+    // Wallet multiplier based on success rate (unchanged logic, just uses updated rate)
     let walletMultiplier = 0.5;
     if (successRate >= 50) walletMultiplier = 1.5;
     else if (successRate >= 20) walletMultiplier = 1.2;
     else if (successRate >= 10) walletMultiplier = 1.0;
+
+    // Calculate activity decay (unchanged logic)
     let lastActivity = 0;
     for (const runner of badgedWallet.runners) {
       const buyTimes = runner.transactions?.buy?.map(b => b.timestamp).filter(ts => ts != null) || [];
@@ -568,6 +825,7 @@ async function scoreWallets(convertedWallets) {
     for (const runner of wallet.runners) {
       if (runner.timestamps && runner.timestamps.hasOwnProperty('allprices')) delete runner.timestamps.allprices;
       if (typeof runner.score !== 'number' || isNaN(runner.score)) runner.score = 0;
+      if (typeof runner.pnl !== 'number' || isNaN(runner.pnl)) runner.pnl = 0;
     }
     if (typeof wallet.confidence_score !== 'number' || isNaN(wallet.confidence_score)) wallet.confidence_score = 0;
     if (typeof wallet.pnl !== 'number' || isNaN(wallet.pnl)) wallet.pnl = 0;

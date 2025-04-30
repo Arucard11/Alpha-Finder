@@ -67,13 +67,22 @@ async function removeMev(){
 }
 
 async function restartRunners(){
-    getAllRunners().then((runners) => {
-        runners.forEach((runner) => {
-            
-            updateRunner(runner.id,"checked",false).catch((err) => console.error(err));
-        });
-    })
-
+    try {
+        const runners = await getAllRunners();
+        const updatePromises = runners.map(runner => 
+            updateRunner(runner.id, "checked", false).catch(err => {
+                console.error(`Error updating runner ${runner.id}:`, err);
+                throw err;
+            })
+        );
+        await Promise.all(updatePromises);
+        console.log("All runners successfully updated to unchecked.");
+    } catch (err) {
+        console.error("Error in restartRunners:", err);
+        throw err;
+    }
 }
 
-removeMev().then(() => console.log("Removed MEV wallets"))
+restartRunners().then(() => console.log("Restarted runners"))
+
+// removeMev().then(() => console.log("Removed MEV wallets"))

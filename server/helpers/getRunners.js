@@ -15,11 +15,12 @@ async function getRunners(){
     
     for(let coin of newRunners){
         try{
-            let {athMarketCap,athprice,timestamps} = await getAth(coin.address)
+            let {athMarketCap,athprice,timestamps,tokenSupply} = await getAth(coin.address)
             if(athMarketCap >= 1000000){
                 coin.athprice = athprice
                 coin.timestamps = timestamps
                 coin.athmc = athMarketCap
+                coin.totalsupply = tokenSupply
                 console.log("ATH Market Cap: ",athMarketCap)
                 console.log("ATH Price: ",athprice)
                 await addRunner(coin)   

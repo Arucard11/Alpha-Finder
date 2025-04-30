@@ -19,6 +19,7 @@ exports.getRunnerStats = async (req, res) => {
       stats: {
         peak_hours: launchStats?.peak_hours || [],
         top_days: launchStats?.top_days || [],
+        athmc_stats: launchStats?.athmc_stats || { median: 0, p25: 0, p75: 0 },
         month_distribution: launchStats?.month_distribution || {
           early: 0,
           late: 0

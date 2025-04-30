@@ -1,4 +1,3 @@
-const cleanUpEarlyBuyers = require("./cleanUpEarlyBuyers.js");
 const dotenv = require("dotenv");
 dotenv.config();
 
@@ -83,10 +82,10 @@ async function getAllTxs(address) {
 
 
 async function getEarlyBuyers(coin) {
-  const { address, name, symbol, logouri, athprice, timestamps,athmc } = coin;
+  const { address, name, symbol, logouri, athprice, timestamps, athmc, totalsupply } = coin;
   let secondCheck = true
   // Debug: Log coin and timestamp info.
-  console.log("Coin info:", { address, name, symbol, athprice, timestamps,athmc });
+  console.log("Coin info:", { address, name, symbol, athprice, timestamps, athmc, totalsupply });
   
   let earlyTx = await getTxsByTime(address,timestamps.early,"before");
   console.log("transactions before early timestamp",earlyTx.length)
@@ -128,7 +127,7 @@ async function getEarlyBuyers(coin) {
       }
     }
     return acc;
-  }, { mintInfo: { address, name, symbol, logouri, timestamps, athprice,athmc} });
+  }, { mintInfo: { address, name, symbol, logouri, timestamps, athprice, athmc, totalsupply } });
 
   
 
@@ -157,9 +156,7 @@ async function getEarlyBuyers(coin) {
   }
   
 
-  let cleaned = cleanUpEarlyBuyers(earlyBuyers);
- 
-  return cleaned
+  return earlyBuyers;
 }
 
 module.exports = getEarlyBuyers;
