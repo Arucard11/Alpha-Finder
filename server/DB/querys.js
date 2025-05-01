@@ -41,24 +41,31 @@ async function addWallet(data) {
   if (!Array.isArray(badges)) {
     throw new Error('badges must be an array of strings.');
   }
- 
+  // Ensure pnl is a number or default to 0
+  const finalPnl = (typeof pnl === 'number' && !isNaN(pnl)) ? pnl : 0;
 
   const query = `
     INSERT INTO wallets (address, runners, confidence_score, badges, pnl)
     VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (address) DO UPDATE SET
+      runners = wallets.runners || EXCLUDED.runners, -- Append new runners to existing ones
+      confidence_score = EXCLUDED.confidence_score, -- Overwrite with new score
+      badges = EXCLUDED.badges,                   -- Overwrite with new badges
+      pnl = EXCLUDED.pnl                          -- Overwrite with new pnl
     RETURNING *;
   `;
   try {
     const result = await pool.query(query, [
       sanitizedAddress,
-      JSON.stringify(runners),
+      JSON.stringify(runners), // Insert the runners array as JSONB
       confidence_score,
       badges,
-      pnl
+      finalPnl // Use the validated PnL value
     ]);
     return result.rows[0];
   } catch (err) {
-    console.error('Error inserting wallet:', err);
+    // Log the address along with the error
+    console.error(`Error inserting/updating wallet ${sanitizedAddress}:`, err);
     throw err;
   }
 }
