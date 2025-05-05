@@ -4,6 +4,7 @@ dotenv.config()
 const { getTotalRunners, updateWallet, addWallet } = require('../DB/querys.js');
 const { connection } = require('./connection.js');
 const { PublicKey } = require('@solana/web3.js');
+const { getRecentBuys } = require('./getTransactions.js');
 
 // Simple delay helper function
 function delay(ms) {
@@ -387,169 +388,6 @@ function computeEarlyExitPenalty(runner) {
     return maxPenaltyFraction;
 }
 
-/**
- * Helper function to fetch wallet transactions for the past 90 days and calculate unique coins bought.
- * Returns an object with the count of unique coins bought and runners in the 90-day window.
- */
-async function getWalletActivityIn90Days(walletAddress, runners, apiOptions) {
-    // Ensure runners is an array before proceeding
-    const safeRunners = Array.isArray(runners) ? runners : [];
-    
-    const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
-    const ninetyDaysAgoMs = Date.now() - NINETY_DAYS_MS;
-    let uniqueCoinsBought = new Set();
-    let runnersInWindow = 0;
-    let allTransactions = [];
-    let beforeParam = '';
-    const limit = 1000;
-
-    try {
-        // Fetch transactions until we cover 90 days or no more data
-        while (true) {
-            const url = `https://public-api.birdeye.so/v1/wallet/tx_list?wallet=${walletAddress}&limit=${limit}${beforeParam ? `&before=${beforeParam}` : ''}`;
-            
-            // Add a small delay before each API call within the pagination loop
-            await delay(500); 
-
-            let response;
-            try {
-                response = await retryAsyncOperation(
-                    () => fetch(url, apiOptions),
-                    3, // maxAttempts
-                    1000, // initialDelayMs
-                    `fetch Birdeye tx_list for ${walletAddress} (before=${beforeParam || ''})`
-                );
-
-                // If retryAsyncOperation completes without throwing, but the response is still not ok,
-                // it means the final attempt resulted in a non-5xx error (e.g., 4xx).
-                if (!response.ok) {
-                    console.error(`Birdeye API request for ${walletAddress} failed permanently after retries with status ${response.status}: ${response.statusText}. URL: ${url}`);
-                    // Attempt to read body for more details, but don't let it crash the loop
-                    try {
-                        const errorBody = await response.text();
-                        console.error(`Error response body (truncated): ${errorBody.substring(0, 500)}`);
-                    } catch (bodyError) {
-                        console.error(`Could not read error response body after non-OK status.`);
-                    }
-                    break; // Stop fetching for this wallet if a permanent error occurs
-                }
-
-            } catch (fetchError) {
-                // This catch block now specifically handles errors thrown by retryAsyncOperation
-                // after all retries have failed (likely due to persistent 5xx, network issues, or connection resets).
-                console.error(`Final fetch attempt failed for Birdeye tx_list for ${walletAddress} after retries. Error: ${fetchError.message}. URL: ${url}`);
-                // Optionally log the full error if needed for debugging
-                // console.error("Full fetch error object:", fetchError);
-                break; // Break loop if fetch fails definitively
-            }
-            
-            let data;
-            try {
-                data = await response.json();
-            } catch (parseError) {
-                // Handle JSON parsing errors specifically
-                const errorMessage = parseError.message || '';
-                console.error(`Error parsing JSON for wallet ${walletAddress} from URL ${url}. Status: ${response.status}. Error: ${errorMessage}`);
-                
-                // Attempt to read response text, but don't let it crash
-                let responseText = '';
-                try {
-                    responseText = await response.text();
-                    if (responseText) {
-                       console.error("Received non-JSON response body (truncated):", responseText.substring(0, 500));
-                    }
-                } catch (textError) {
-                     console.error("Could not read response text after JSON parse failure.");
-                }
-
-                // Specific Handling: If the error is 'terminated' (connection likely cut mid-stream), 
-                // let the outer loop continue, potentially allowing retryAsyncOperation to try again.
-                // Otherwise, break the loop for this wallet as it's a more permanent parse failure.
-                if (errorMessage.includes('terminated')) {
-                    console.warn(`JSON parsing terminated for ${walletAddress}, stopping transaction processing for this wallet due to incomplete data.`);
-                    // Intentionally do nothing here, the while(true) loop will continue
-                    // If the *fetch* itself threw 'terminated', retryAsyncOperation handles it.
-                    // If response.json() throws 'terminated', this might indicate an incomplete stream
-                    // that a subsequent full retry *might* fix. Breaking here would prevent that.
-                    // NOTE: This could still lead to an infinite loop if 'terminated' always happens for a specific URL.
-                    // Consider adding a specific counter here if that becomes an issue.
-                    break; // BREAKING seems safer than potentially looping forever on a bad response.
-                           // If retryAsyncOperation *didn't* catch 'terminated', this prevents endless loops.
-                } else {
-                    break; // Break the loop for other JSON parsing errors
-                }
-            }
-
-            // Check for API success and if data exists before accessing length
-            if (!data.success || !data.data || !data.data.solana) { // Modified check slightly for safety
-                 console.warn(`Birdeye API request for ${walletAddress} successful but returned no data or success=false.`);
-                 break;
-            }
-            
-            const transactions = data.data.solana;
-            allTransactions.push(...transactions);
-
-            // OPTIMIZATION: If fewer transactions than the limit were returned, assume no more data
-            if (transactions.length < limit) {
-                break; 
-            }
-
-            // Original Logic: Check timestamp of the LAST transaction in this batch
-            const lastTx = transactions[transactions.length - 1];
-            // Add safety check for blockTime existence (already existed, kept)
-            if (!lastTx || !lastTx.blockTime) {
-                console.warn(`Transaction missing blockTime for wallet ${walletAddress}, stopping pagination.`);
-                break;
-            }
-            const lastTxTimeMs = new Date(lastTx.blockTime).getTime();
-            if (lastTxTimeMs > ninetyDaysAgoMs) {
-                beforeParam = lastTx.txHash;
-            } else {
-                 // Oldest tx is outside 90 days, so we stop
-                break;
-            }
-        }
-
-        // Filter transactions for buys within 90 days and collect unique tokens
-        for (const tx of allTransactions) {
-            // Add safety check for blockTime existence
-            if (!tx.blockTime) continue;
-            const txTimeMs = new Date(tx.blockTime).getTime();
-            if (txTimeMs < ninetyDaysAgoMs) continue;
-
-            // Infer buy transaction if balanceChange shows positive amount for a token (not SOL)
-            if (tx.balanceChange) {
-                for (const change of tx.balanceChange) {
-                    // Check if amount is positive and address is not SOL
-                    if (change.amount > 0 && change.address !== 'So11111111111111111111111111111111111111112') {
-                        uniqueCoinsBought.add(change.address);
-                    }
-                }
-            }
-        }
-
-        // Count runners with early timestamp in the last 90 days
-        for (const runner of safeRunners) {
-            const earlyTimestamp = runner.timestamps?.early;
-            if (earlyTimestamp && earlyTimestamp * 1000 >= ninetyDaysAgoMs) {
-                runnersInWindow++;
-            }
-        }
-
-        return {
-            uniqueCoinsBoughtCount: uniqueCoinsBought.size,
-            runnersInWindow: runnersInWindow
-        };
-    } catch (error) {
-        // Catch any unexpected errors in the outer try block
-        console.error(`Unexpected error in getWalletActivityIn90Days for wallet ${walletAddress}:`, error);
-        return {
-            uniqueCoinsBoughtCount: 0,
-            runnersInWindow: 0
-        };
-    }
-}
-
 // Manual promise pool for concurrency limiting
 async function promisePool(items, worker, concurrency) {
   const results = [];
@@ -568,10 +406,7 @@ async function promisePool(items, worker, concurrency) {
  * Main scoring function: Assigns badges and calculates scores including PnL.
  */
 async function scoreWallets(convertedWallets) {
-  const options = {
-    method: 'GET',
-    headers: {accept: 'application/json', 'x-chain': 'solana', 'X-API-KEY': `${process.env.BIRDEYE_API_KEY}`},
-  };
+  
   const concurrencyLimit = 1; // Reduced from 3 to 1
   console.log(`Starting scoring for ${convertedWallets.length} wallets...`);
 
@@ -594,16 +429,19 @@ async function scoreWallets(convertedWallets) {
         wallet.runners = [];
     }
 
-    let totalWalletTokens = 0;
+    let verifiedUniqueBuysCount = 0; // Renamed from totalWalletTokens
     let badgedWallet = wallet;
     badgedWallet.badges = badgedWallet.badges || []; // Ensure badges array exists
 
     try {
-      const activityData = await getWalletActivityIn90Days(wallet.address, wallet.runners, options);
-      totalWalletTokens = activityData.uniqueCoinsBoughtCount || 0; // Default to 0 if undefined
+      // Call the new function to get verified buys from the last 90 days via RPC
+      console.log(`[${new Date().toISOString()}] Fetching verified buys via RPC for ${wallet.address}...`);
+      const boughtMints = await getRecentBuys(wallet.address);
+      verifiedUniqueBuysCount = boughtMints.length;
+      console.log(`[${new Date().toISOString()}] Found ${verifiedUniqueBuysCount} verified buys for ${wallet.address}.`);
     } catch (e) {
-      console.error("Error fetching 90-day activity for wallet:", e);
-      totalWalletTokens = 0; // Assume 0 if fetch fails
+      console.error(`Error fetching recent buys via RPC for wallet ${wallet.address}:`, e);
+      // Keep verifiedUniqueBuysCount at 0 if RPC call fails
     }
 
     const runnerCount = badgedWallet.runners.length;
@@ -622,7 +460,8 @@ async function scoreWallets(convertedWallets) {
         )
     ).length;
 
-    const ratio = totalWalletTokens > 0 ? (runnersWithRecentBuysCount / totalWalletTokens) * 100 : 0; 
+    // Use the verified count from getRecentBuys for the ratio denominator
+    const ratio = verifiedUniqueBuysCount > 0 ? (runnersWithRecentBuysCount / verifiedUniqueBuysCount) * 100 : 0; 
 
     let targetPercentageBadge = null;
     if (runnerCount > 1) { // Only assign these if not a one-hit wonder

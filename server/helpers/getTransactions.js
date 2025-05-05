@@ -1,0 +1,206 @@
+'use strict';
+
+const { connection } = require('./connection.js');
+const { PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+
+// Constants
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const SOL_MINT = 'So11111111111111111111111111111111111111112'; // Technically native mint
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * Fetches and analyzes transactions for a given wallet from the past 90 days
+ * to find tokens bought by spending SOL.
+ * @param {string} walletAddressString The public key of the wallet as a string.
+ * @returns {Promise<string[]>} A promise that resolves to an array of unique mint addresses bought.
+ */
+
+
+async function getRecentBuys(walletAddressString) {
+    // Dynamically import p-limit
+    const pLimit = (await import('p-limit')).default; // Use .default for the actual function
+
+    console.log(`Analyzing transactions for wallet: ${walletAddressString}`);
+    let walletPublicKey;
+    try {
+        walletPublicKey = new PublicKey(walletAddressString);
+    } catch (error) {
+        console.error("Invalid wallet address provided:", error);
+        throw new Error("Invalid wallet address string.");
+    }
+
+    const boughtTokenMints = new Set();
+    const cutoffTime = Date.now() - NINETY_DAYS_MS; // Timestamp 90 days ago in ms
+    const cutoffTimeSeconds = Math.floor(cutoffTime / 1000); // Convert to seconds for comparison with blockTime
+
+    let signatures = [];
+    let lastSignature = undefined;
+    let fetchMore = true;
+    const batchSize = 1000; // Max allowed by getSignaturesForAddress
+
+    console.log(`Fetching transactions since ${new Date(cutoffTime).toISOString()}...`);
+
+    try {
+        while (fetchMore) {
+            const signatureInfos = await connection.getSignaturesForAddress(walletPublicKey, {
+                limit: batchSize,
+                before: lastSignature, // Paginate backwards in time
+            });
+
+            if (signatureInfos.length === 0) {
+                fetchMore = false;
+                break;
+            }
+
+            const oldestTxInBatch = signatureInfos[signatureInfos.length - 1];
+            lastSignature = oldestTxInBatch.signature;
+
+            // Filter signatures that are within the 90-day window
+            const relevantSignatures = signatureInfos.filter(sigInfo => {
+                // Check if blockTime exists and is more recent than the cutoff
+                return sigInfo.blockTime && sigInfo.blockTime > cutoffTimeSeconds;
+            });
+
+            signatures.push(...relevantSignatures.map(s => s.signature));
+
+            // If the oldest transaction fetched in this batch is older than our cutoff, stop fetching
+            if (oldestTxInBatch.blockTime && oldestTxInBatch.blockTime <= cutoffTimeSeconds) {
+                console.log(`Reached transactions older than 90 days (BlockTime: ${oldestTxInBatch.blockTime}, Cutoff: ${cutoffTimeSeconds}). Stopping signature fetch.`);
+                fetchMore = false;
+            }
+
+            // Safety break if we fetch fewer than the batch size, indicating end of history (usually)
+            if (signatureInfos.length < batchSize) {
+                 console.log("Fetched last available batch of signatures.");
+                fetchMore = false;
+            }
+            console.log(`Fetched ${signatureInfos.length} signatures, ${signatures.length} total relevant signatures so far... Last signature: ${lastSignature}`);
+             // Add a small delay to avoid hitting rate limits aggressively
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        console.log(`Found ${signatures.length} candidate transactions within the last 90 days.`);
+
+        // Create a limiter
+        // Start with a concurrency of 15 as a balance between speed and rate-limiting.
+        // Adjust this value based on performance and RPC limits.
+        const limit = pLimit(10);
+
+        console.log(`Processing ${signatures.length} transactions with concurrency limit of ${10}...`);
+
+        let processedCount = 0;
+        const totalSignatures = signatures.length;
+        let lastLogTime = Date.now();
+
+        const processingPromises = signatures.map(signature => {
+            // Wrap the async operation in the limiter
+            return limit(async () => {
+                try {
+                    const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
+
+                    if (!tx || !tx.meta || tx.meta.err) {
+                        // Skip failed transactions or transactions where fetch failed or meta is missing
+                        // console.warn(`Skipping invalid/failed transaction: ${signature}`);
+                    } else {
+                        // --- Analyze Transaction --- 
+                        const { meta, transaction } = tx;
+
+                        // Attempt to find wallet index and check SOL balance change
+                        let solSpent = false;
+                        let accountKeys = null;
+                        let walletIndex = -1;
+
+                        if (transaction && transaction.message && transaction.message.accountKeys) {
+                            accountKeys = transaction.message.accountKeys.map(key => key.toBase58());
+                            walletIndex = accountKeys.indexOf(walletAddressString);
+
+                            if (walletIndex !== -1) {
+                                const preSolBalance = meta.preBalances[walletIndex];
+                                const postSolBalance = meta.postBalances[walletIndex];
+                                solSpent = preSolBalance > postSolBalance;
+                            } 
+                        } // We proceed even if accountKeys aren't available, but solSpent remains false
+
+                        // Check token balances for buys regardless of accountKeys availability,
+                        // but only add if SOL spend was confirmed.
+                        const preTokenBalances = meta.preTokenBalances || [];
+                        const postTokenBalances = meta.postTokenBalances || [];
+
+                        for (const postBalance of postTokenBalances) {
+                            let owner = postBalance.owner;
+                            // If owner field is missing (can happen), try inferring from accountIndex if accountKeys exist
+                            if (!owner && accountKeys && postBalance.accountIndex < accountKeys.length) {
+                                owner = accountKeys[postBalance.accountIndex];
+                            }
+
+                            if (owner === walletAddressString) {
+                                if (postBalance.mint !== SOL_MINT && postBalance.mint !== USDC_MINT) {
+                                    const preBalance = preTokenBalances.find(
+                                        (pre) => pre.accountIndex === postBalance.accountIndex && pre.mint === postBalance.mint
+                                    );
+                                    const preAmount = preBalance ? BigInt(preBalance.uiTokenAmount.amount) : 0n;
+                                    const postAmount = BigInt(postBalance.uiTokenAmount.amount);
+    
+                                    // Add mint only if token amount increased AND we confirmed SOL was spent
+                                    if (postAmount > preAmount && solSpent) {
+                                        // console.log(`   [+] Buy detected: Spent SOL for ${postBalance.mint} in tx ${signature}`);
+                                        boughtTokenMints.add(postBalance.mint);
+                                        break; // Found a confirmed buy for this wallet in this tx, move to next tx
+                                    }
+                                }
+                            }
+                        } // End token balance loop
+                    } // End analysis block
+
+                } catch (err) {
+                    console.warn(`Failed to fetch or process transaction ${signature}:`, err.message);
+                    if (err.message && (err.message.includes('429') || err.message.toLowerCase().includes('rate limit'))) {
+                        console.error(`RATE LIMIT HIT with concurrency ${10}. Consider lowering the limit further.`);
+                        // Potentially pause or implement backoff here if needed
+                    }
+                } finally {
+                    // Increment counter and log progress periodically
+                    processedCount++;
+                    const now = Date.now();
+                    // Log every 100 or if > 5 seconds passed since last log
+                    if (processedCount % 100 === 0 || now - lastLogTime > 5000 || processedCount === totalSignatures) {
+                        console.log(`Processed ${processedCount} / ${totalSignatures} transactions...`);
+                        lastLogTime = now;
+                    }
+                }
+            }); // End limit wrapper
+        }); // End map
+
+        // Wait for all limited promises to complete
+        await Promise.all(processingPromises);
+
+        console.log(`Finished processing ${processedCount} transactions.`);
+
+    } catch (error) {
+        console.error("Error fetching transaction signatures:", error);
+        throw error; // Re-throw the error after logging
+    }
+
+    // Placeholder return
+    return Array.from(boughtTokenMints);
+}
+
+module.exports = { getRecentBuys };
+
+// Example Usage (optional, for testing)
+
+(async () => {
+    // Replace with a real wallet address for testing
+    const testWallet = "FG8LEP14GKw6ADNcqNHhVLNLuyMiJJFjzLrbiUEVQ75j"; 
+    if (testWallet === "YOUR_TEST_WALLET_ADDRESS_HERE") {
+        console.warn("Please replace YOUR_TEST_WALLET_ADDRESS_HERE with an actual Solana wallet address to test.");
+        return;
+    }
+    try {
+        const buys = await getRecentBuys(testWallet);
+        console.log("Tokens bought (excluding SOL/USDC):", buys);
+    } catch (error) {
+        console.error("Failed to get recent buys:", error);
+    }
+})();
+
