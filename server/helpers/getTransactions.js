@@ -189,18 +189,4 @@ module.exports = { getRecentBuys };
 
 // Example Usage (optional, for testing)
 
-(async () => {
-    // Replace with a real wallet address for testing
-    const testWallet = "FG8LEP14GKw6ADNcqNHhVLNLuyMiJJFjzLrbiUEVQ75j"; 
-    if (testWallet === "YOUR_TEST_WALLET_ADDRESS_HERE") {
-        console.warn("Please replace YOUR_TEST_WALLET_ADDRESS_HERE with an actual Solana wallet address to test.");
-        return;
-    }
-    try {
-        const buys = await getRecentBuys(testWallet);
-        console.log("Tokens bought (excluding SOL/USDC):", buys);
-    } catch (error) {
-        console.error("Failed to get recent buys:", error);
-    }
-})();
 
