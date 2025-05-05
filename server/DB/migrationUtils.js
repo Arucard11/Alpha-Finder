@@ -101,6 +101,69 @@ async function migrateWhitelist(sourcePoolConfig, destPoolConfig) {
   }
 }
 
+/**
+ * Drops the 'runners' and 'wallets' tables from both source and destination databases if they exist.
+ *
+ * @param {object} sourcePoolConfig - Connection configuration object for the source database pool.
+ * @param {object} destPoolConfig - Connection configuration object for the destination database pool.
+ * @returns {Promise<void>} A promise that resolves when the tables are dropped or rejects on error.
+ */
+async function dropRunnerAndWalletTables(sourcePoolConfig, destPoolConfig) {
+  let sourcePool;
+  let destPool;
+  let sourceClient;
+  let destClient;
+
+  try {
+    // --- 1. Connect to Databases ---
+    console.log('Connecting to source database for table drop...');
+    sourcePool = new Pool(sourcePoolConfig);
+    sourceClient = await sourcePool.connect();
+    console.log('Connected to source database.');
+
+    console.log('Connecting to destination database for table drop...');
+    destPool = new Pool(destPoolConfig);
+    destClient = await destPool.connect();
+    console.log('Connected to destination database.');
+
+    // --- 2. Drop Tables ---
+    console.log('Dropping tables from source database...');
+    await sourceClient.query('DROP TABLE IF EXISTS runners;');
+    await sourceClient.query('DROP TABLE IF EXISTS wallets;');
+    console.log('Dropped runners and wallets tables from source (if they existed).');
+
+    console.log('Dropping tables from destination database...');
+    await destClient.query('DROP TABLE IF EXISTS runners;');
+    await destClient.query('DROP TABLE IF EXISTS wallets;');
+    console.log('Dropped runners and wallets tables from destination (if they existed).');
+
+    console.log('Table dropping process completed successfully!');
+
+  } catch (error) {
+    console.error('Error during table dropping:', error);
+    throw error; // Re-throw the error for higher-level handling
+
+  } finally {
+    // --- 3. Clean Up Connections ---
+    if (sourceClient) {
+      sourceClient.release();
+      console.log('Released source client.');
+    }
+    if (sourcePool) {
+      await sourcePool.end();
+      console.log('Closed source pool.');
+    }
+    if (destClient) {
+      destClient.release();
+      console.log('Released destination client.');
+    }
+    if (destPool) {
+      await destPool.end();
+      console.log('Closed destination pool.');
+    }
+  }
+}
+
 // --- How to Use ---
 
 // 1. Define your database connection configurations
@@ -121,15 +184,15 @@ const destinationDbConfig = {
 };
 
 // 2. Call the migration function
-migrateWhitelist(sourceDbConfig, destinationDbConfig)
-  .then(() => {
-    console.log('Migration script finished successfully.');
-    process.exit(0); // Exit cleanly
-  })
-  .catch((err) => {
-    console.error('Migration script failed:', err);
-    process.exit(1); // Exit with error code
-  });
+// migrateWhitelist(sourceDbConfig, destinationDbConfig)
+//   .then(() => {
+//     console.log('Migration script finished successfully.');
+//     process.exit(0); // Exit cleanly
+//   })
+//   .catch((err) => {
+//     console.error('Migration script failed:', err);
+//     process.exit(1); // Exit with error code
+//   });
 
-
-module.exports = { migrateWhitelist }; 
+dropRunnerAndWalletTables(sourceDbConfig,destinationDbConfig)
+module.exports = { migrateWhitelist, dropRunnerAndWalletTables }; 
