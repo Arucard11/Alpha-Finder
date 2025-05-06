@@ -52,19 +52,7 @@ function isPotentialSandwichBot(runner, config) {
     return sandwichPairCount >= config.minSandwichPairs;
 }
 
-async function removeMev(){
-    
-    let allWallets = await getAllWallets()
-    for(let wallet of allWallets){
-        for(runner of wallet.runners){
-            if(isPotentialSandwichBot(runner, sandwichConfig)){
-                console.log("Removing wallet: ", wallet.id, " for runner: ", runner.name)
-                await deleteWalletById(wallet.id)
-            }   
-        }
-    }
-    
-}
+
 
 async function restartRunners(){
     try {

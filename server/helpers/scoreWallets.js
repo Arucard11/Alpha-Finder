@@ -450,49 +450,65 @@ async function scoreWallets(convertedWallets) {
     console.log(`[${new Date().toISOString()}] (Wallet ${index + 1}/${convertedWallets.length}) Starting badge calculation for wallet: ${wallet.address}`);
     // ---------------------------------
 
-    // --- Ratio-Based Badge Calculation --- START
-    const NINETY_DAYS_SEC = 90 * 24 * 60 * 60;
-    const ninetyDaysAgoSec = Math.floor(Date.now() / 1000) - NINETY_DAYS_SEC;
-
-    const runnersWithRecentBuysCount = badgedWallet.runners.filter(runner => 
-        runner.transactions?.buy?.some(buy => 
-            typeof buy.timestamp === 'number' && buy.timestamp >= ninetyDaysAgoSec
-        )
-    ).length;
-
-    // Use the verified count from getRecentBuys for the ratio denominator
-    const ratio = verifiedUniqueBuysCount > 0 ? (runnersWithRecentBuysCount / verifiedUniqueBuysCount) * 100 : 0; 
-
-    let targetPercentageBadge = null;
-    if (runnerCount > 1) { // Only assign these if not a one-hit wonder
-        if (ratio > 90) targetPercentageBadge = 'ultimate trader';
-        else if (ratio > 80) targetPercentageBadge = 'elite trader';
-        else if (ratio > 70) targetPercentageBadge = 'grandmaster trader';
-        else if (ratio > 60) targetPercentageBadge = 'master trader';
-        else if (ratio > 50) targetPercentageBadge = 'expert trader';
-        else if (ratio > 40) targetPercentageBadge = 'highly specialized trader';
-        else if (ratio > 30) targetPercentageBadge = 'specialized trader';
-        else if (ratio > 20) targetPercentageBadge = 'focused trader';
-        else if (ratio > 4) targetPercentageBadge = 'potential alpha'; // Ratio <= 20%
-        else if (ratio >= 2) targetPercentageBadge = 'mid trader';      // Ratio <= 4%
-        else targetPercentageBadge = 'degen sprayer';                  // Ratio < 2%
+    // --- PRE-CHECK FOR BOT BEHAVIOR ---
+    // Iterate through runners to identify bot behavior early.
+    // If bot behavior is detected, the 'bot' badge is added,
+    // which will then cause the percentage-based badge calculation to be skipped.
+    for (const runner of badgedWallet.runners) {
+      if (isPotentialSandwichBot(runner, sandwichConfig)) {
+        if (!badgedWallet.badges.includes('bot')) {
+          badgedWallet.badges.push('bot');
+        }
+        break; // Wallet is flagged as bot, no need to check other runners for this purpose.
+      }
     }
-    
-    // Define all badges in this category + conflicting ones
-    const percentageBadgesToRemove = [
-        'ultimate trader', 'elite trader', 'grandmaster trader', 'master trader', 
-        'expert trader', 'highly specialized trader', 'specialized trader', 
-        'focused trader', 'potential alpha', 'mid trader', 'degen sprayer',
-        'one hit wonder' // Keep removing one hit wonder
-    ];
+    // --- END PRE-CHECK FOR BOT BEHAVIOR ---
 
-    // Clean existing badges before adding the new one
-    if (targetPercentageBadge) {
-        badgedWallet.badges = badgedWallet.badges.filter(b => !percentageBadgesToRemove.includes(b));
-        badgedWallet.badges.push(targetPercentageBadge);
+    // --- Ratio-Based Badge Calculation --- START
+    // Skip percentage badge calculation if 'bot' badge is already present
+    if (!badgedWallet.badges.includes('bot')) {
+        const NINETY_DAYS_SEC = 90 * 24 * 60 * 60;
+        const ninetyDaysAgoSec = Math.floor(Date.now() / 1000) - NINETY_DAYS_SEC;
+
+        const runnersWithRecentBuysCount = badgedWallet.runners.filter(runner =>
+            runner.transactions?.buy?.some(buy =>
+                typeof buy.timestamp === 'number' && buy.timestamp >= ninetyDaysAgoSec
+            )
+        ).length;
+
+        // Use the verified count from getRecentBuys for the ratio denominator
+        const ratio = verifiedUniqueBuysCount > 0 ? (runnersWithRecentBuysCount / verifiedUniqueBuysCount) * 100 : 0;
+
+        let targetPercentageBadge = null;
+        if (runnerCount > 1) { // Only assign these if not a one-hit wonder
+            if (ratio > 90) targetPercentageBadge = 'ultimate trader';
+            else if (ratio > 80) targetPercentageBadge = 'elite trader';
+            else if (ratio > 70) targetPercentageBadge = 'grandmaster trader';
+            else if (ratio > 60) targetPercentageBadge = 'master trader';
+            else if (ratio > 50) targetPercentageBadge = 'expert trader';
+            else if (ratio > 40) targetPercentageBadge = 'highly specialized trader';
+            else if (ratio > 30) targetPercentageBadge = 'specialized trader';
+            else if (ratio > 20) targetPercentageBadge = 'focused trader';
+            else if (ratio > 4) targetPercentageBadge = 'potential alpha'; // Ratio <= 20%
+            else if (ratio >= 2) targetPercentageBadge = 'mid trader';      // Ratio <= 4%
+            else targetPercentageBadge = 'degen sprayer';                  // Ratio < 2%
+        }
+
+        // Define all badges in this category + conflicting ones
+        const percentageBadgesToRemove = [
+            'ultimate trader', 'elite trader', 'grandmaster trader', 'master trader',
+            'expert trader', 'highly specialized trader', 'specialized trader',
+            'focused trader', 'potential alpha', 'mid trader', 'degen sprayer',
+            'one hit wonder' // Keep removing one hit wonder
+        ];
+
+        // Clean existing badges before adding the new one
+        if (targetPercentageBadge) {
+            badgedWallet.badges = badgedWallet.badges.filter(b => !percentageBadgesToRemove.includes(b));
+            badgedWallet.badges.push(targetPercentageBadge);
+        }
     }
     // --- Ratio-Based Badge Calculation --- END
-
 
     // --- Other Badge Logic --- START
     // 1) One-Hit Wonder (check this first)
@@ -590,14 +606,6 @@ async function scoreWallets(convertedWallets) {
         runner.score = 2; // Keep default score for holders without sells yet
         runner.scored = true;
         continue;
-      }
-
-      // Check for bot behavior
-      if (isPotentialSandwichBot(runner, sandwichConfig)) {
-        if (!badgedWallet.badges.includes('bot')) {
-          badgedWallet.badges.push('bot');
-          // Maybe apply a score penalty directly for bots? For now, just badge.
-        }
       }
 
       // Calculate scoring components using updated functions
