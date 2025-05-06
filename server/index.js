@@ -12,11 +12,33 @@ const admin = require('./routes/admin.js')
 const app = express();
 const setUpDb = require("./DB/createTables.js")
 //https://spectra-78nr.onrender.com,
+
+// Define allowed origins for CORS
+const allowedOrigins = [
+  'https://alpha-finder.onrender.com',
+  'http://localhost:5173',
+  'https://spectra-78nr.onrender.com'
+];
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Apply more specific CORS configuration
 app.use(cors({
-  origin: '*',
-  credentials: false
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, Postman, curl) 
+    // or if origin is in the allowedOrigins list
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // It's good practice to log or handle disallowed origins if needed
+      // console.error(`CORS Error: Origin ${origin} not allowed.`);
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
+  credentials: true, // Allows cookies and authorization headers
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS', // Specify allowed methods
+  allowedHeaders: 'Content-Type,Authorization,X-Requested-With' // Specify allowed headers
 }));
 // You can add other endpoints for wallets and runners similarly...
 app.use('/leaderboard', leaderboardRoutes);
