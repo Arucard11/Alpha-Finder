@@ -464,6 +464,16 @@ async function scoreWallets(convertedWallets) {
     }
     // --- END PRE-CHECK FOR BOT BEHAVIOR ---
 
+    // Define all badges in this category + conflicting ones
+    // This list is used for cleaning up badges before assigning a new percentage-based badge
+    // or the 'one hit wonder' badge.
+    const percentageBadgesToRemove = [
+        'ultimate trader', 'elite trader', 'grandmaster trader', 'master trader',
+        'expert trader', 'highly specialized trader', 'specialized trader',
+        'focused trader', 'potential alpha', 'mid trader', 'degen sprayer',
+        'one hit wonder' 
+    ];
+
     // --- Ratio-Based Badge Calculation --- START
     // Skip percentage badge calculation if 'bot' badge is already present
     if (!badgedWallet.badges.includes('bot')) {
@@ -493,14 +503,6 @@ async function scoreWallets(convertedWallets) {
             else if (ratio >= 2) targetPercentageBadge = 'mid trader';      // Ratio <= 4%
             else targetPercentageBadge = 'degen sprayer';                  // Ratio < 2%
         }
-
-        // Define all badges in this category + conflicting ones
-        const percentageBadgesToRemove = [
-            'ultimate trader', 'elite trader', 'grandmaster trader', 'master trader',
-            'expert trader', 'highly specialized trader', 'specialized trader',
-            'focused trader', 'potential alpha', 'mid trader', 'degen sprayer',
-            'one hit wonder' // Keep removing one hit wonder
-        ];
 
         // Clean existing badges before adding the new one
         if (targetPercentageBadge) {
