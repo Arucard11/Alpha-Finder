@@ -251,13 +251,13 @@ function isPotentialSandwichBot(runner, config) {
 async function isHighVolumeActivityBot(address, connection) {
   const SIGNATURE_THRESHOLD = 10000;
   const MAX_SIGNATURES_TO_CHECK = 15000; // Check up to 15 batches of 1000
-  const NINETY_DAYS_SEC = 90 * 24 * 60 * 60;
-  const recentPeriodCutoffSec = Math.floor(Date.now() / 1000) - NINETY_DAYS_SEC;
+  const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60; // Changed from NINETY_DAYS_SEC
+  const recentPeriodCutoffSec = Math.floor(Date.now() / 1000) - THIRTY_DAYS_SEC;
   let recentSignaturesCount = 0;
   let lastSignature = null;
   let signaturesChecked = 0;
 
-  console.log(`[HighVolumeCheck] Starting for ${address}. Cutoff: ${new Date(recentPeriodCutoffSec * 1000).toISOString()}`);
+  console.log(`[HighVolumeCheck] Starting for ${address}. Cutoff: ${new Date(recentPeriodCutoffSec * 1000).toISOString()} (last 30 days)`);
 
   try {
     while (signaturesChecked < MAX_SIGNATURES_TO_CHECK) {
@@ -401,11 +401,11 @@ function computeConvictionBonus(runner) {
         if (validBuyTimestamps.length === 0) return 1.0;
         const latestBuyTimestamp = Math.max(...validBuyTimestamps);
         const nowSec = Math.floor(Date.now() / 1000);
-        const NINETY_DAYS_SEC = 90 * 24 * 60 * 60;
+        const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60;
         const maxBuyValue = Math.max(0, ...buys.map(b => (b.amount || 0) * (b.price || 0)));
 
         if (maxBuyValue < 5 && maxBuyValue > 0) bonus = 1.0;
-        else bonus = (nowSec - latestBuyTimestamp <= NINETY_DAYS_SEC) ? 1.5 : 1.2;
+        else bonus = (nowSec - latestBuyTimestamp <= THIRTY_DAYS_SEC) ? 1.5 : 1.2;
 
     } else {
         let achievedBonus = 0.8;
@@ -523,15 +523,15 @@ async function scoreWallets(convertedWallets) {
 
     // Only fetch recent buys if not already flagged as a high-volume bot
     if (!badgedWallet.badges.includes('bot')) {
-      try {
-        // Call the new function to get verified buys from the last 90 days via RPC
-        console.log(`[${new Date().toISOString()}] Fetching verified buys via RPC for ${wallet.address}...`);
-        const boughtMints = await getRecentBuys(wallet.address);
-        verifiedUniqueBuysCount = boughtMints.length;
-        console.log(`[${new Date().toISOString()}] Found ${verifiedUniqueBuysCount} verified buys for ${wallet.address}.`);
-      } catch (e) {
-        console.error(`Error fetching recent buys via RPC for wallet ${wallet.address}:`, e);
-        // Keep verifiedUniqueBuysCount at 0 if RPC call fails
+    try {
+      // Call the new function to get verified buys from the last 90 days via RPC
+      console.log(`[${new Date().toISOString()}] Fetching verified buys via RPC for ${wallet.address}...`);
+      const boughtMints = await getRecentBuys(wallet.address);
+      verifiedUniqueBuysCount = boughtMints.length;
+      console.log(`[${new Date().toISOString()}] Found ${verifiedUniqueBuysCount} verified buys for ${wallet.address}.`);
+    } catch (e) {
+      console.error(`Error fetching recent buys via RPC for wallet ${wallet.address}:`, e);
+      // Keep verifiedUniqueBuysCount at 0 if RPC call fails
       }
     } else {
       console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} is flagged as a high-volume bot, skipping getRecentBuys.`);
@@ -547,15 +547,15 @@ async function scoreWallets(convertedWallets) {
     // --- PRE-CHECK FOR BOT BEHAVIOR (Sandwich etc.) ---
     // Only run this if not already flagged as a high-volume bot, as that's a more general bot flag.
     if (!badgedWallet.badges.includes('bot')) {
-        for (const runner of badgedWallet.runners) {
-          if (isPotentialSandwichBot(runner, sandwichConfig)) {
-            if (!badgedWallet.badges.includes('bot')) {
-              badgedWallet.badges.push('bot');
-            }
-            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} flagged as potential sandwich bot. Badge added.`);
-            break; // Wallet is flagged as bot, no need to check other runners for this purpose.
-          }
+    for (const runner of badgedWallet.runners) {
+      if (isPotentialSandwichBot(runner, sandwichConfig)) {
+        if (!badgedWallet.badges.includes('bot')) {
+          badgedWallet.badges.push('bot');
         }
+            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} flagged as potential sandwich bot. Badge added.`);
+        break; // Wallet is flagged as bot, no need to check other runners for this purpose.
+          }
+      }
     }
     // --- END PRE-CHECK FOR BOT BEHAVIOR ---
 
@@ -572,12 +572,12 @@ async function scoreWallets(convertedWallets) {
     // --- Ratio-Based Badge Calculation --- START
     // Skip percentage badge calculation if 'bot' badge is already present
     if (!badgedWallet.badges.includes('bot')) {
-        const NINETY_DAYS_SEC = 90 * 24 * 60 * 60;
-        const ninetyDaysAgoSec = Math.floor(Date.now() / 1000) - NINETY_DAYS_SEC;
+        const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60; // Changed from NINETY_DAYS_SEC
+        const thirtyDaysAgoSec = Math.floor(Date.now() / 1000) - THIRTY_DAYS_SEC; // Renamed from ninetyDaysAgoSec
 
         const runnersWithRecentBuysCount = badgedWallet.runners.filter(runner =>
             runner.transactions?.buy?.some(buy =>
-                typeof buy.timestamp === 'number' && buy.timestamp >= ninetyDaysAgoSec
+                typeof buy.timestamp === 'number' && buy.timestamp >= thirtyDaysAgoSec
             )
         ).length;
 
@@ -610,59 +610,59 @@ async function scoreWallets(convertedWallets) {
     // --- Other Badge Logic --- START
     // Only assign these if not a bot
     if (!badgedWallet.badges.includes('bot')) {
-        // 1) One-Hit Wonder (check this first)
-        if (runnerCount === 1) {
-            // Ensure it doesn't conflict with previously assigned percentage badges (shouldn't happen due to logic above, but good practice)
-            if (!badgedWallet.badges.includes('one hit wonder')) {
-                 // Still clean potentially conflicting percentage badges if assigning one hit wonder
-                 badgedWallet.badges = badgedWallet.badges.filter(b => !percentageBadgesToRemove.includes(b)); 
-                 badgedWallet.badges.push('one hit wonder');
-            }
+    // 1) One-Hit Wonder (check this first)
+    if (runnerCount === 1) {
+        // Ensure it doesn't conflict with previously assigned percentage badges (shouldn't happen due to logic above, but good practice)
+        if (!badgedWallet.badges.includes('one hit wonder')) {
+             // Still clean potentially conflicting percentage badges if assigning one hit wonder
+             badgedWallet.badges = badgedWallet.badges.filter(b => !percentageBadgesToRemove.includes(b)); 
+             badgedWallet.badges.push('one hit wonder');
         }
-        // 2) Legendary Buyer
-        else if (runnerCount >= 10) {
-            // Now, simply add legendary buyer if the condition is met, regardless of percentage badges.
-            if (!badgedWallet.badges.includes('legendary buyer')) {
-                badgedWallet.badges.push('legendary buyer');
-            } 
-        }
-        
-        // Note: The old ratio-based badge assignment block is removed.
+    }
+    // 2) Legendary Buyer
+    else if (runnerCount >= 10) {
+        // Now, simply add legendary buyer if the condition is met, regardless of percentage badges.
+        if (!badgedWallet.badges.includes('legendary buyer')) {
+            badgedWallet.badges.push('legendary buyer');
+        } 
+    }
+    
+    // Note: The old ratio-based badge assignment block is removed.
 
-        // 4) High Conviction
-        else if (
-          badgedWallet.runners.some(runner =>
-            runner.transactions?.sell?.some(sell =>
-              runner.timestamps?.twoMillion != null && sell.timestamp != null && sell.timestamp > runner.timestamps.twoMillion
-            )
-          )
-        ) {
-           if (!badgedWallet.badges.includes('high conviction')) badgedWallet.badges.push('high conviction');
-        }
-        // 7) Diamond Hands (Redefined: multiple runners sold past '$5M')
-        else if (totalRunnersSoldPastFiveMillion(badgedWallet.runners) >= 2) {
-            if (!badgedWallet.badges.includes('diamond hands')) badgedWallet.badges.push('diamond hands');
-        }
-        // 8) Whale Buyer
-        else if (
-          badgedWallet.runners.some(runner =>
-            (runner.transactions?.buy?.some(b => (b.amount || 0) * (b.price || 0) >= 5000)) ||
-            (runner.transactions?.sell?.some(s => (s.amount || 0) * (s.price || 0) >= 5000))
-          )
-        ) {
-           if (!badgedWallet.badges.includes('whale buyer')) badgedWallet.badges.push('whale buyer');
-        }
-        // 9) Dead Wallet
-        else if (await checkIfDeadWallet(badgedWallet.address)) {
-           if (!badgedWallet.badges.includes('dead wallet')) badgedWallet.badges.push('dead wallet');
-        }
-        // 10) Comeback Trader
-        else if (await checkIfComebackTrader(badgedWallet.address)) {
-           // Ensure it doesn't add if 'dead wallet' is present (checkIfComebackTrader might need adjustment if dead wallets can be comebacks)
-           if (!badgedWallet.badges.includes('dead wallet') && !badgedWallet.badges.includes('comeback trader')) {
-               badgedWallet.badges.push('comeback trader');
+    // 4) High Conviction
+    else if (
+      badgedWallet.runners.some(runner =>
+        runner.transactions?.sell?.some(sell =>
+          runner.timestamps?.twoMillion != null && sell.timestamp != null && sell.timestamp > runner.timestamps.twoMillion
+        )
+      )
+    ) {
+       if (!badgedWallet.badges.includes('high conviction')) badgedWallet.badges.push('high conviction');
+    }
+    // 7) Diamond Hands (Redefined: multiple runners sold past '$5M')
+    else if (totalRunnersSoldPastFiveMillion(badgedWallet.runners) >= 2) {
+        if (!badgedWallet.badges.includes('diamond hands')) badgedWallet.badges.push('diamond hands');
+    }
+    // 8) Whale Buyer
+    else if (
+      badgedWallet.runners.some(runner =>
+        (runner.transactions?.buy?.some(b => (b.amount || 0) * (b.price || 0) >= 5000)) ||
+        (runner.transactions?.sell?.some(s => (s.amount || 0) * (s.price || 0) >= 5000))
+      )
+    ) {
+       if (!badgedWallet.badges.includes('whale buyer')) badgedWallet.badges.push('whale buyer');
+    }
+    // 9) Dead Wallet
+    else if (await checkIfDeadWallet(badgedWallet.address)) {
+       if (!badgedWallet.badges.includes('dead wallet')) badgedWallet.badges.push('dead wallet');
+    }
+    // 10) Comeback Trader
+    else if (await checkIfComebackTrader(badgedWallet.address)) {
+       // Ensure it doesn't add if 'dead wallet' is present (checkIfComebackTrader might need adjustment if dead wallets can be comebacks)
+       if (!badgedWallet.badges.includes('dead wallet') && !badgedWallet.badges.includes('comeback trader')) {
+           badgedWallet.badges.push('comeback trader');
            }
-        }
+       }
     }
     // --- Other Badge Logic --- END
 

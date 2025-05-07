@@ -24,7 +24,10 @@ const RunnerChart = ({ runner }) => {
   
   // Get start and end dates from price data
   const startDate = sortedPrices.length ? new Date(sortedPrices[0].unixTime * 1000) : new Date();
-  const endDate = sortedPrices.length ? new Date(sortedPrices[sortedPrices.length - 1].unixTime * 1000) : new Date();
+  // Use maxProfitEnd as the end date if available, otherwise use the last price point
+  const endDate = runner.timestamps.maxProfitEnd 
+    ? new Date(runner.timestamps.maxProfitEnd * 1000) 
+    : (sortedPrices.length ? new Date(sortedPrices[sortedPrices.length - 1].unixTime * 1000) : new Date());
 
   const lineData = sortedPrices.map((p) => ({
     x: new Date(p.unixTime * 1000),
