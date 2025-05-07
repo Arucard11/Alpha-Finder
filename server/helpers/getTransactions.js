@@ -2,6 +2,7 @@
 
 const { connection } = require('./connection.js');
 const { PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const pLimit = require('p-limit');
 
 // Constants
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -81,89 +82,73 @@ async function getRecentBuys(walletAddressString) {
         console.log(`Found ${signatures.length} candidate transactions within the last 30 days.`);
 
         // Sequential processing starts here
-        console.log(`Processing ${signatures.length} transactions sequentially...`);
+        console.log(`Processing ${signatures.length} transactions concurrently with p-limit (limit 10)...`);
+        const limit = pLimit(10);
+        let processedCount = 0; // For approximate progress
 
-        let processedCount = 0;
-        const totalSignatures = signatures.length;
-        let lastLogTime = Date.now();
-
-        for (const signature of signatures) {
+        const transactionProcessingPromises = signatures.map(signature =>
+          limit(async () => {
             try {
-                const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
+              const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
 
-                if (!tx || !tx.meta || tx.meta.err) {
-                    // Skip failed transactions or transactions where fetch failed or meta is missing
-                    // console.warn(`Skipping invalid/failed transaction: ${signature}`);
-                } else {
-                    // --- Analyze Transaction --- 
-                    const { meta, transaction } = tx;
+              if (!tx || !tx.meta || tx.meta.err) {
+                // Skip failed transactions or transactions where fetch failed or meta is missing
+              } else {
+                const { meta, transaction } = tx;
+                let solSpent = false;
+                let accountKeys = null;
+                let walletIndex = -1;
 
-                    // Attempt to find wallet index and check SOL balance change
-                    let solSpent = false;
-                    let accountKeys = null;
-                    let walletIndex = -1;
-
-                    if (transaction && transaction.message && transaction.message.accountKeys) {
-                        accountKeys = transaction.message.accountKeys.map(key => key.toBase58());
-                        walletIndex = accountKeys.indexOf(walletAddressString);
-
-                        if (walletIndex !== -1) {
-                            const preSolBalance = meta.preBalances[walletIndex];
-                            const postSolBalance = meta.postBalances[walletIndex];
-                            solSpent = preSolBalance > postSolBalance;
-                        } 
-                    } // We proceed even if accountKeys aren't available, but solSpent remains false
-
-                    // Check token balances for buys regardless of accountKeys availability,
-                    // but only add if SOL spend was confirmed.
-                    const preTokenBalances = meta.preTokenBalances || [];
-                    const postTokenBalances = meta.postTokenBalances || [];
-
-                    for (const postBalance of postTokenBalances) {
-                        let owner = postBalance.owner;
-                        // If owner field is missing (can happen), try inferring from accountIndex if accountKeys exist
-                        if (!owner && accountKeys && postBalance.accountIndex < accountKeys.length) {
-                            owner = accountKeys[postBalance.accountIndex];
-                        }
-
-                        if (owner === walletAddressString) {
-                            if (postBalance.mint !== SOL_MINT && postBalance.mint !== USDC_MINT) {
-                                const preBalance = preTokenBalances.find(
-                                    (pre) => pre.accountIndex === postBalance.accountIndex && pre.mint === postBalance.mint
-                                );
-                                const preAmount = preBalance ? BigInt(preBalance.uiTokenAmount.amount) : 0n;
-                                const postAmount = BigInt(postBalance.uiTokenAmount.amount);
-
-                                // Add mint only if token amount increased AND we confirmed SOL was spent
-                                if (postAmount > preAmount && solSpent) {
-                                    // console.log(`   [+] Buy detected: Spent SOL for ${postBalance.mint} in tx ${signature}`);
-                                    boughtTokenMints.add(postBalance.mint);
-                                    break; // Found a confirmed buy for this wallet in this tx, move to next tx
-                                }
-                            }
-                        }
-                    } // End token balance loop
-                } // End analysis block
-
-            } catch (err) {
-                console.warn(`Failed to fetch or process transaction ${signature}:`, err.message);
-                if (err.message && (err.message.includes('429') || err.message.toLowerCase().includes('rate limit'))) {
-                    console.error(`RATE LIMIT HIT. Consider adding delays or reducing request frequency if this persists.`);
-                    // Potentially pause or implement backoff here if needed
+                if (transaction && transaction.message && transaction.message.accountKeys) {
+                  accountKeys = transaction.message.accountKeys.map(key => key.toBase58());
+                  walletIndex = accountKeys.indexOf(walletAddressString);
+                  if (walletIndex !== -1) {
+                    const preSolBalance = meta.preBalances[walletIndex];
+                    const postSolBalance = meta.postBalances[walletIndex];
+                    solSpent = preSolBalance > postSolBalance;
+                  }
                 }
+
+                const preTokenBalances = meta.preTokenBalances || [];
+                const postTokenBalances = meta.postTokenBalances || [];
+
+                for (const postBalance of postTokenBalances) {
+                  let owner = postBalance.owner;
+                  if (!owner && accountKeys && postBalance.accountIndex < accountKeys.length) {
+                    owner = accountKeys[postBalance.accountIndex];
+                  }
+                  if (owner === walletAddressString) {
+                    if (postBalance.mint !== SOL_MINT && postBalance.mint !== USDC_MINT) {
+                      const preBalance = preTokenBalances.find(
+                        (pre) => pre.accountIndex === postBalance.accountIndex && pre.mint === postBalance.mint
+                      );
+                      const preAmount = preBalance ? BigInt(preBalance.uiTokenAmount.amount) : 0n;
+                      const postAmount = BigInt(postBalance.uiTokenAmount.amount);
+                      if (postAmount > preAmount && solSpent) {
+                        boughtTokenMints.add(postBalance.mint);
+                        break; 
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn(`Failed to fetch or process transaction ${signature}:`, err.message);
+              if (err.message && (err.message.includes('429') || err.message.toLowerCase().includes('rate limit'))) {
+                console.error(`RATE LIMIT HIT. Consider adding delays or reducing request frequency if this persists.`);
+              }
             } finally {
-                // Increment counter and log progress periodically
                 processedCount++;
-                const now = Date.now();
-                // Log every 100 or if > 5 seconds passed since last log
-                if (processedCount % 100 === 0 || now - lastLogTime > 5000 || processedCount === totalSignatures) {
-                    console.log(`Processed ${processedCount} / ${totalSignatures} transactions...`);
-                    lastLogTime = now;
+                if (processedCount % 100 === 0 || processedCount === signatures.length) { // Log every 100 or at the end
+                     console.log(`Processed approximately ${processedCount} / ${signatures.length} transactions...`);
                 }
             }
-        } // End for...of loop for sequential processing
+          })
+        );
 
-        console.log(`Finished processing ${processedCount} transactions.`);
+        await Promise.all(transactionProcessingPromises);
+
+        console.log(`Finished processing ${signatures.length} transactions.`);
 
     } catch (error) {
         console.error("Error fetching transaction signatures:", error);

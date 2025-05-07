@@ -5,6 +5,7 @@ const { getTotalRunners, updateWallet, addWallet } = require('../DB/querys.js');
 const { connection } = require('./connection.js');
 const { PublicKey } = require('@solana/web3.js');
 const { getRecentBuys } = require('./getTransactions.js');
+const pLimit = require('p-limit');
 
 // Simple delay helper function
 function delay(ms) {
@@ -458,27 +459,12 @@ function computeEarlyExitPenalty(runner) {
     return maxPenaltyFraction;
 }
 
-// Manual promise pool for concurrency limiting
-async function promisePool(items, worker, concurrency) {
-  const results = [];
-  let i = 0;
-  async function next() {
-    if (i >= items.length) return;
-    const currentIndex = i++;
-    results[currentIndex] = await worker(items[currentIndex], currentIndex);
-    await next();
-  }
-  await Promise.all(Array.from({ length: concurrency }, next));
-  return results;
-}
-
 /**
  * Main scoring function: Assigns badges and calculates scores including PnL.
  */
 async function scoreWallets(convertedWallets) {
-  
-  const concurrencyLimit = 1; // Reduced from 3 to 1
-  console.log(`Starting scoring for ${convertedWallets.length} wallets...`);
+  const limit = pLimit(5); // Concurrency limit set to 5
+  console.log(`Starting scoring for ${convertedWallets.length} wallets with p-limit concurrency of 5...`);
 
   // Worker function for a single wallet
   async function processWallet(wallet, index) {
@@ -858,8 +844,12 @@ async function scoreWallets(convertedWallets) {
     }
   }
 
-  // Run the pool
-  const results = await promisePool(convertedWallets, (wallet, index) => processWallet(wallet, index), concurrencyLimit);
+  // Run the pool using p-limit
+  const promises = convertedWallets.map((wallet, index) => 
+    limit(() => processWallet(wallet, index))
+  );
+  const results = await Promise.all(promises);
+
   const processed = results.filter(Boolean);
   console.log(`Database operations complete. Processed data for ${processed.length}/${convertedWallets.length} wallets.`);
 }
