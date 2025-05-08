@@ -2,7 +2,6 @@
 
 const { connection } = require('./connection.js');
 const { PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
-const pLimit = require('p-limit');
 
 // Constants
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -18,7 +17,7 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // Changed from 90 to 30 days
 
 
 async function getRecentBuys(walletAddressString) {
-    // p-limit removed
+    const pLimit = (await import('p-limit')).default;
 
     console.log(`Analyzing transactions for wallet: ${walletAddressString}`);
     let walletPublicKey;
@@ -82,12 +81,17 @@ async function getRecentBuys(walletAddressString) {
         console.log(`Found ${signatures.length} candidate transactions within the last 30 days.`);
 
         // Sequential processing starts here
-        console.log(`Processing ${signatures.length} transactions concurrently with p-limit (limit 10)...`);
-        const limit = pLimit(10);
+        console.log(`Processing ${signatures.length} transactions concurrently with p-limit (limit 50)...`);
+        const limit = pLimit(50);
         let processedCount = 0; // For approximate progress
 
-        const transactionProcessingPromises = signatures.map(signature =>
+        const transactionProcessingPromises = signatures.map((signature, txIndex) =>
           limit(async () => {
+            // Add a staggered delay based on index to respect rate limits (100 req/sec)
+            // With 50 concurrent transactions, stagger by 20ms each to aim for ~50 req/sec
+            const staggerDelay = txIndex % 50 * 20;
+            await new Promise(resolve => setTimeout(resolve, staggerDelay));
+            
             try {
               const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
 

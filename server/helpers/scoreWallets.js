@@ -5,7 +5,6 @@ const { getTotalRunners, updateWallet, addWallet } = require('../DB/querys.js');
 const { connection } = require('./connection.js');
 const { PublicKey } = require('@solana/web3.js');
 const { getRecentBuys } = require('./getTransactions.js');
-const pLimit = require('p-limit');
 
 // Simple delay helper function
 function delay(ms) {
@@ -463,13 +462,20 @@ function computeEarlyExitPenalty(runner) {
  * Main scoring function: Assigns badges and calculates scores including PnL.
  */
 async function scoreWallets(convertedWallets) {
-  const limit = pLimit(5); // Concurrency limit set to 5
-  console.log(`Starting scoring for ${convertedWallets.length} wallets with p-limit concurrency of 5...`);
+  const pLimit = (await import('p-limit')).default;
+  const limit = pLimit(10); // Concurrency limit set to 10
+  console.log(`Starting scoring for ${convertedWallets.length} wallets with p-limit concurrency of 10...`);
 
   // Worker function for a single wallet
   async function processWallet(wallet, index) {
+    // Add a staggered delay based on index to respect rate limits (100 req/sec)
+    // With 10 concurrent wallets, stagger by 200ms each to spread out requests
+    const staggerDelay = index % 10 * 200;
+    await delay(staggerDelay);
+    console.log(`[${new Date().toISOString()}] Delayed ${staggerDelay}ms before starting wallet ${index + 1}/${convertedWallets.length}: ${wallet.address}`);
+    
     // Add a small delay before processing each wallet to potentially avoid rate limits
-    await delay(200); 
+    await delay(500); 
 
     // Ensure wallet and wallet.runners are valid
     if (!wallet || !wallet.address) {
