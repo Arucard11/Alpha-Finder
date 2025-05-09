@@ -765,21 +765,23 @@ async function scoreWallets(convertedWallets) {
     const sumTokenScores = badgedWallet.runners.reduce((acc, r) => acc + (r.score || 0), 0);
 
     // --- Success Rate Calculation (Updated) --- START
-    let boughtBelowCount = 0;
+    let runnersEligibleForRate = 0; // Renamed from boughtBelowCount
     let successCount = 0;
-    const nowSecWallet = Math.floor(Date.now() / 1000);
+    const nowSecWallet = Math.floor(Date.now() / 1000); // This variable is used later for decay
 
     for (const runner of badgedWallet.runners) {
-      const tEarly = runner.timestamps?.early;
+      // tEarly is no longer a direct condition for being in the denominator for success rate.
+      // const tEarly = runner.timestamps?.early; 
       const tMaxProfitStart = runner.timestamps?.maxProfitStart;
       const tMaxProfitEnd = runner.timestamps?.maxProfitEnd;
 
-      if (tEarly == null || tMaxProfitStart == null || tMaxProfitEnd == null) continue;
+      // A runner is considered for the success rate if their max profit zone is defined.
+      // The 'early buy' condition is removed from here.
+      if (tMaxProfitStart == null || tMaxProfitEnd == null) {
+        continue; // Skip if essential timestamps for profit zone are missing
+      }
 
-      const anyBuyEarly = runner.transactions?.buy?.some(b => b.timestamp != null && b.timestamp <= tEarly);
-      if (!anyBuyEarly) continue; // Didn't buy early enough
-
-      boughtBelowCount++; // Count this runner as having bought early
+      runnersEligibleForRate++; // This runner is eligible to be part of the success rate calculation.
 
       // Check if SOLD WITHIN the max profit zone
       let soldInZone = false;
@@ -793,11 +795,13 @@ async function scoreWallets(convertedWallets) {
       }
       // Holding past the zone is no longer considered a success for this metric
 
-      if (soldInZone) successCount++; // Count as successful sell timing
+      if (soldInZone) {
+        successCount++; // Count as successful sell timing
+      }
     }
     // --- Success Rate Calculation (Updated) --- END
 
-    const successRate = boughtBelowCount > 0 ? (successCount / boughtBelowCount) * 100 : 0;
+    const successRate = runnersEligibleForRate > 0 ? (successCount / runnersEligibleForRate) * 100 : 0;
 
     // Wallet multiplier based on success rate (unchanged logic, just uses updated rate)
     let walletMultiplier = 0.5;
