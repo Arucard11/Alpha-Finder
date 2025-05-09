@@ -250,14 +250,14 @@ function isPotentialSandwichBot(runner, config) {
  */
 async function isHighVolumeActivityBot(address, connection) {
   const SIGNATURE_THRESHOLD = 10000;
-  const MAX_SIGNATURES_TO_CHECK = 15000; // Check up to 15 batches of 1000
-  const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60; // Changed from NINETY_DAYS_SEC
+  const MAX_SIGNATURES_TO_CHECK = 10000; // Changed to 10000
+  const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60;
   const recentPeriodCutoffSec = Math.floor(Date.now() / 1000) - THIRTY_DAYS_SEC;
   let recentSignaturesCount = 0;
   let lastSignature = null;
   let signaturesChecked = 0;
 
-  console.log(`[HighVolumeCheck] Starting for ${address}. Cutoff: ${new Date(recentPeriodCutoffSec * 1000).toISOString()} (last 30 days)`);
+  console.log(`[HighVolumeCheck] Starting for ${address}. Cutoff: ${new Date(recentPeriodCutoffSec * 1000).toISOString()} (last 30 days), Max Signatures to Check: ${MAX_SIGNATURES_TO_CHECK}, Signature Threshold: ${SIGNATURE_THRESHOLD}`);
 
   try {
     while (signaturesChecked < MAX_SIGNATURES_TO_CHECK) {
@@ -282,14 +282,18 @@ async function isHighVolumeActivityBot(address, connection) {
         signaturesChecked++;
         if (sig.blockTime && sig.blockTime >= recentPeriodCutoffSec) {
           recentSignaturesCount++;
-          if (recentSignaturesCount > SIGNATURE_THRESHOLD) {
+          if (recentSignaturesCount >= SIGNATURE_THRESHOLD) { // Changed from > to >=
             console.log(`[HighVolumeCheck] Wallet ${address} identified as high-volume bot. Found ${recentSignaturesCount} recent signatures (checked ${signaturesChecked}).`);
-            return true; // Threshold exceeded
+            return true; // Threshold exceeded or met
           }
         } else if (sig.blockTime && sig.blockTime < recentPeriodCutoffSec) {
           // Signatures are now older than our cutoff period
           console.log(`[HighVolumeCheck] Wallet ${address} - reached signatures older than cutoff. Found ${recentSignaturesCount} recent (checked ${signaturesChecked}).`);
           return false;
+        }
+        // Ensure we don't check more than MAX_SIGNATURES_TO_CHECK even within the last batch
+        if (signaturesChecked >= MAX_SIGNATURES_TO_CHECK) {
+            break; 
         }
       }
 
@@ -300,7 +304,7 @@ async function isHighVolumeActivityBot(address, connection) {
       lastSignature = signatures[signatures.length - 1].signature;
 
       if (signaturesChecked >= MAX_SIGNATURES_TO_CHECK) {
-          console.log(`[HighVolumeCheck] Wallet ${address} - hit MAX_SIGNATURES_TO_CHECK (${MAX_SIGNATURES_TO_CHECK}). Found ${recentSignaturesCount} recent.`);
+          console.log(`[HighVolumeCheck] Wallet ${address} - hit MAX_SIGNATURES_TO_CHECK (${MAX_SIGNATURES_TO_CHECK}) while fetching batches. Found ${recentSignaturesCount} recent.`);
           break;
       }
       await delay(300); // Small delay between batches
@@ -310,7 +314,7 @@ async function isHighVolumeActivityBot(address, connection) {
     return false; // On error, assume not a high-volume bot to avoid false positives
   }
 
-  console.log(`[HighVolumeCheck] Wallet ${address} is NOT a high-volume bot. Found ${recentSignaturesCount} recent signatures (checked ${signaturesChecked}).`);
+  console.log(`[HighVolumeCheck] Wallet ${address} is NOT a high-volume bot after checking ${signaturesChecked} signatures. Found ${recentSignaturesCount} recent signatures.`);
   return false; // Threshold not exceeded within checked signatures
 }
 
