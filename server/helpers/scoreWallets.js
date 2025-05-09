@@ -491,6 +491,14 @@ async function scoreWallets(convertedWallets) {
         wallet.runners = [];
     }
 
+    // --- NEW CHECK: If any runner in this wallet's input data already has a defined numerical score, skip all further processing for this wallet ---
+    const alreadyScoredRunnerExists = wallet.runners.some(r => r && typeof r.score === 'number' && !isNaN(r.score));
+    if (alreadyScoredRunnerExists) {
+        console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} (ID: ${wallet.id || 'N/A'}) contains runners that appear to be already scored. Skipping re-processing this wallet to prevent duplication.`);
+        return null; // Skip scoring, badging, and finalization for this wallet
+    }
+    // --- END NEW CHECK ---
+
     let verifiedUniqueBuysCount = 0; // Renamed from totalWalletTokens
     let badgedWallet = wallet;
     badgedWallet.badges = badgedWallet.badges || []; // Ensure badges array exists
@@ -690,6 +698,21 @@ async function scoreWallets(convertedWallets) {
         continue; // Ensure wallet totals still include scored runners if run multiple times
       }
 
+      // --- NEW: Check for PnL Bonus Eligibility based on sell prices vs buy prices --- START
+      let isEligibleForPnlBonus = false;
+      const buyPrices = (runner.transactions?.buy || []).map(b => b.price).filter(p => typeof p === 'number' && p !== null);
+      const sellPrices = (runner.transactions?.sell || []).map(s => s.price).filter(p => typeof p === 'number' && p !== null);
+
+      if (buyPrices.length > 0 && sellPrices.length > 0) {
+        const maxBuyPrice = Math.max(...buyPrices);
+        // Check if ALL sell prices are strictly greater than the MAX buy price
+        const allSellsStrictlyHigher = sellPrices.every(sellPrice => sellPrice > maxBuyPrice);
+        if (allSellsStrictlyHigher) {
+          isEligibleForPnlBonus = true;
+        }
+      }
+      // --- NEW: Check for PnL Bonus Eligibility based on sell prices vs buy prices --- END
+
       const hasBuys = runner.transactions?.buy && runner.transactions.buy.length > 0;
       const hasSells = runner.transactions?.sell && runner.transactions.sell.length > 0;
 
@@ -710,17 +733,16 @@ async function scoreWallets(convertedWallets) {
       let pnlMultiplier = 1.0;
       if (runnerBuyValue > 0.01) { // Avoid division by zero or tiny values
           const pnlPercentage = runner.pnl / runnerBuyValue;
-          if (runner.pnl < 0) {
-              // Negative PnL reduces score, scale based on percentage loss
-              // e.g., -100% PnL -> 0 multiplier? Too harsh. Let's cap reduction.
-              // Map [-Infinity, 0] PnL percentage to [0.1, 1.0] multiplier
+          if (runner.pnl < 0) { // Negative PnL - penalty applies regardless of new eligibility condition
                pnlMultiplier = Math.max(0.1, 1 + pnlPercentage); // e.g., -50% -> 0.5 multiplier
-          } else {
+          } else if (runner.pnl > 0 && isEligibleForPnlBonus) { // Positive PnL - bonus applies ONLY if eligible
               // Positive PnL increases score, scale based on percentage gain
               // Map [0, +Infinity] PnL percentage to [1.0, 2.0] multiplier (capped)
               pnlMultiplier = Math.min(2.0, 1 + pnlPercentage / 2); // e.g., +100% (1.0) -> 1.5 multiplier, +200% (2.0) -> 2.0 multiplier
           }
-      } else if (runner.pnl < -0.01) { // Handle negative PnL even if buy value is near zero (e.g., fees)
+          // If runner.pnl > 0 but !isEligibleForPnlBonus, pnlMultiplier remains 1.0 (no bonus for this part)
+          // If runner.pnl === 0, pnlMultiplier also remains 1.0
+      } else if (runner.pnl < -0.01) { // Handle negative PnL even if buy value is near zero (e.g., fees) - penalty applies
             pnlMultiplier = 0.5; // Apply a moderate penalty
       }
       // --- PnL Multiplier Logic --- END

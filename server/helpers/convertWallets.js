@@ -27,22 +27,40 @@ async function convertWallets(coin) {
       // Fetch the wallet from the database.
       const oldWallet = await getWalletByAddress(walletAddress);
       
-      // Build runner objects for each set of transactions for this wallet.
-      const runners = walletGroups[walletAddress].map(transactions => {
+      // Build runner objects for each set of transactions for this wallet for the CURRENT coin.
+      const newRunnersForCurrentCoin = walletGroups[walletAddress].map(transactions => {
+        // 'address' here is the coin's mint address from mintInfo
         return { address, name, symbol, logouri, millionTimeStamp, transactions, athprice, timestamps, athmc, totalsupply };
       });
       
       if (oldWallet) {
-        // If the wallet already exists in the DB, append the new runners.
-        oldWallet.runners = oldWallet.runners || [];
-        oldWallet.runners.push(...runners);
-        console.log("Using old wallet from DB:", oldWallet.address);
+        let shouldAddNewRunners = true;
+        // Check if oldWallet.runners already contains a scored runner for the CURRENT coin (mintInfo.address)
+        if (oldWallet.runners && oldWallet.runners.length > 0) {
+          const existingScoredRunnerForCurrentCoin = oldWallet.runners.find(
+            r => r.address === mintInfo.address && // Check if runner is for the same coin
+                 r.score != null && typeof r.score === 'number' && !isNaN(r.score) // Check if it has a valid score
+          );
+          if (existingScoredRunnerForCurrentCoin) {
+            console.log(`[convertWallets] Wallet ${walletAddress} already has a scored runner for coin ${mintInfo.address}. Skipping addition of new runner data for this coin.`);
+            shouldAddNewRunners = false;
+          }
+        }
+
+        if (shouldAddNewRunners) {
+          // If the wallet already exists in the DB, append the new runners.
+          oldWallet.runners = oldWallet.runners || [];
+          oldWallet.runners.push(...newRunnersForCurrentCoin);
+          console.log("[convertWallets] Using old wallet from DB: ", oldWallet.address, ", appended new runners for coin: ", mintInfo.address);
+        } else {
+          console.log("[convertWallets] Using old wallet from DB: ", oldWallet.address, ", new runners for coin: ", mintInfo.address, " were not appended as a scored version already exists.");
+        }
         return oldWallet;
       } else {
         // Otherwise, create a new wallet object.
         const newWallet = {
           address: walletAddress,
-          runners: runners,
+          runners: newRunnersForCurrentCoin,
           badges: []
         };
         console.log("Creating new wallet:", walletAddress);

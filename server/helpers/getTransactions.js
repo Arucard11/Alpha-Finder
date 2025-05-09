@@ -81,16 +81,15 @@ async function getRecentBuys(walletAddressString) {
         console.log(`Found ${signatures.length} candidate transactions within the last 30 days.`);
 
         // Sequential processing starts here
-        console.log(`Processing ${signatures.length} transactions concurrently with p-limit (limit 10)...`);
-        const limit = pLimit(10);
+        console.log(`Processing ${signatures.length} transactions concurrently with p-limit (limit 20)...`);
+        const limit = pLimit(50);
         let processedCount = 0; // For approximate progress
 
         const transactionProcessingPromises = signatures.map((signature, txIndex) =>
           limit(async () => {
-            // Add a staggered delay based on index to respect rate limits (100 req/sec)
-            // With 10 concurrent transactions, stagger by 100ms each to aim for ~10 req/sec
-            const staggerDelay = txIndex % 10 * 100;
-            await new Promise(resolve => setTimeout(resolve, staggerDelay));
+            // No artificial stagger delay, relying on overall concurrency settings and RPC limits.
+            // const staggerDelay = txIndex % 10 * 100; // Previous delay logic removed
+            // await new Promise(resolve => setTimeout(resolve, staggerDelay)); // Previous delay logic removed
             
             try {
               const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
