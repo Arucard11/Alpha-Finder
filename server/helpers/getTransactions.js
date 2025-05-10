@@ -81,7 +81,7 @@ async function getRecentBuys(walletAddressString) {
         console.log(`Found ${signatures.length} candidate transactions within the last 30 days.`);
 
         // Sequential processing starts here
-        console.log(`Processing ${signatures.length} transactions concurrently with p-limit (limit 20)...`);
+        console.log(`Processing ${signatures.length} transactions concurrently with p-limit (limit 50)...`);
         const limit = pLimit(50);
         let processedCount = 0; // For approximate progress
 

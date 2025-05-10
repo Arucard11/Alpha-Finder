@@ -472,15 +472,6 @@ async function scoreWallets(convertedWallets) {
 
   // Worker function for a single wallet
   async function processWallet(wallet, index) {
-    // Add a staggered delay based on index to respect rate limits (100 req/sec)
-    // With 10 concurrent wallets, stagger by 200ms each to spread out requests
-    const staggerDelay = index % 10 * 200;
-    await delay(staggerDelay);
-    console.log(`[${new Date().toISOString()}] Delayed ${staggerDelay}ms before starting wallet ${index + 1}/${convertedWallets.length}: ${wallet.address}`);
-    
-    // Add a small delay before processing each wallet to potentially avoid rate limits
-    await delay(500); 
-
     // Ensure wallet and wallet.runners are valid
     if (!wallet || !wallet.address) {
         console.warn(`Skipping processing: Invalid wallet object provided for index ${index}.`, wallet);
