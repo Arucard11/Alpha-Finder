@@ -87,9 +87,7 @@ async function getRecentBuys(walletAddressString) {
 
         const transactionProcessingPromises = signatures.map((signature, txIndex) =>
           limit(async () => {
-            // No artificial stagger delay, relying on overall concurrency settings and RPC limits.
-            // const staggerDelay = txIndex % 10 * 100; // Previous delay logic removed
-            // await new Promise(resolve => setTimeout(resolve, staggerDelay)); // Previous delay logic removed
+           
             
             try {
               const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });

@@ -50,9 +50,19 @@ async function convertWallets(coin) {
         if (shouldAddNewRunners) {
           // If the wallet already exists in the DB, append the new runners.
           oldWallet.runners = oldWallet.runners || [];
-          oldWallet.runners.push(...newRunnersForCurrentCoin);
+          // Only add runners for this coin if not already present
+          // Prevent duplicate runners for the same coin
+          const existingRunnerAddresses = new Set(oldWallet.runners.map(r => r.address + JSON.stringify(r.transactions)));
+          for (const newRunner of newRunnersForCurrentCoin) {
+            const runnerKey = newRunner.address + JSON.stringify(newRunner.transactions);
+            if (!existingRunnerAddresses.has(runnerKey)) {
+              oldWallet.runners.push(newRunner);
+            }
+          }
           console.log("[convertWallets] Using old wallet from DB: ", oldWallet.address, ", appended new runners for coin: ", mintInfo.address);
         } else {
+          // Even if not adding new runners, ensure all previously scored runners are preserved
+          oldWallet.runners = oldWallet.runners || [];
           console.log("[convertWallets] Using old wallet from DB: ", oldWallet.address, ", new runners for coin: ", mintInfo.address, " were not appended as a scored version already exists.");
         }
         return oldWallet;

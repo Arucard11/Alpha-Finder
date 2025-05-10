@@ -841,11 +841,23 @@ async function scoreWallets(convertedWallets) {
     // --- Log Save Result --- 
     if (savedWallet) {
       console.log(`[${new Date().toISOString()}] Successfully saved wallet: ${wallet.address}`);
+      // Log wallet and all runner addresses and names
+      if (savedWallet.runners && Array.isArray(savedWallet.runners)) {
+        console.log(`Wallet ${savedWallet.address} runners:`);
+        savedWallet.runners.forEach((runner, idx) => {
+          console.log(`  Runner ${idx + 1}: address=${runner.address}, name=${runner.name}`);
+        });
+      }
     } else {
       // Error is already logged within finalizeWallet
       console.warn(`[${new Date().toISOString()}] Failed to save wallet: ${wallet.address}`);
     }
     // -----------------------
+
+    // --- Progress Bar / Progress Log ---
+    console.log(`[Progress] Processed ${index + 1} of ${convertedWallets.length} wallets (${(((index + 1) / convertedWallets.length) * 100).toFixed(1)}%)`);
+    // -----------------------------------
+
     return savedWallet; // Return the result from finalizeWallet
   }
 

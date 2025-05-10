@@ -24,10 +24,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 const WalletAccordion = ({ wallet, useAccordion = false }) => {
   const [open, setOpen] = useState(false);
 
-  // Deduplicate runners by address (still potentially useful for display if needed, but not for PnL calc)
-  const uniqueRunners = wallet.runners ? wallet.runners.filter(
-    (runner, idx, arr) => arr.findIndex((r) => r.address === runner.address) === idx
-  ) : [];
+  // Replace all instances of uniqueRunners with wallet.runners (default to [] if undefined)
+  const runners = wallet.runners || [];
 
   // *** CHANGE HERE: Use wallet.pnl directly. Add nullish coalescing for safety ***
   const totalPnl = wallet.pnl ?? 0; // Use the pnl field from the wallet object
@@ -118,7 +116,7 @@ const WalletAccordion = ({ wallet, useAccordion = false }) => {
             <Accordion
               expanded={open}
               onChange={(_, isExpanded) => setOpen(isExpanded)}
-              disabled={!uniqueRunners || uniqueRunners.length === 0}
+              disabled={!runners || runners.length === 0}
               sx={{ backgroundColor: '#333', mt: 1, border: '1px solid rgba(0,230,118,0.3)' }}
             >
               <AccordionSummary
@@ -126,14 +124,14 @@ const WalletAccordion = ({ wallet, useAccordion = false }) => {
                 sx={{ backgroundColor: '#272727' }}
               >
                 <Typography sx={{ color: '#ff4081', fontWeight: 'bold' }}>
-                  See Runners ({uniqueRunners.length})
+                  See Runners ({runners.length})
                 </Typography>
               </AccordionSummary>
               <AccordionDetails sx={{ backgroundColor: '#272727', p: 1 }}>
-                {uniqueRunners.length === 0 ? (
+                {runners.length === 0 ? (
                   <Typography sx={{ color: '#fff' }}>No runners associated with this wallet.</Typography>
                 ) : (
-                  uniqueRunners.map((runner, index) => (
+                  runners.map((runner, index) => (
                     <Box key={runner.address || index} sx={{ mb: 1 }}>
                       <RunnerAccordion runner={runner} />
                     </Box>
@@ -149,7 +147,7 @@ const WalletAccordion = ({ wallet, useAccordion = false }) => {
                 variant="contained"
                 size="small"
                 onClick={handleOpenDialog}
-                disabled={!uniqueRunners || uniqueRunners.length === 0}
+                disabled={!runners || runners.length === 0}
                 sx={{
                   backgroundColor: '#ff4081',
                   color: '#121212',
@@ -159,7 +157,7 @@ const WalletAccordion = ({ wallet, useAccordion = false }) => {
                   }
                 }}
               >
-                See Runners ({uniqueRunners.length}) {/* Show count */}
+                See Runners ({runners.length}) {/* Show count */}
               </Button>
             </Box>
           )}
@@ -170,13 +168,13 @@ const WalletAccordion = ({ wallet, useAccordion = false }) => {
         <Dialog open={open} onClose={handleCloseDialog} fullWidth maxWidth="md">
           <DialogTitle>Runner Details for Wallet: {wallet.address}</DialogTitle>
           <DialogContent dividers>
-            {uniqueRunners.map((runner, index) => (
+            {runners.map((runner, index) => (
               <Box key={runner.address || index} sx={{ mb: 2 }}> {/* Use runner.address as key if available */}
                 {/* *** CHANGE HERE: Removed computePnl prop *** */}
                 <RunnerAccordion runner={runner} />
               </Box>
             ))}
-             {uniqueRunners.length === 0 && (
+             {runners.length === 0 && (
                <Typography>No runners associated with this wallet.</Typography>
              )}
           </DialogContent>

@@ -15,14 +15,16 @@ async function updateData(){
             console.log("DB is up to date!")
             return
         }
-        for(let runner of runners){
-            
+        for(let i = 0; i < runners.length; i++){
+            let runner = runners[i];
             let earlyBuyers = await getEarlyBuyers(runner) 
             console.log("early buyers from main function",earlyBuyers)
             let wallets = await convertWallets(earlyBuyers)
             console.log("wallets from main function",wallets)
             await scoreWallets(wallets)
             await updateRunner(runner.id,"checked", true)
+            // Progress log
+            console.log(`[Progress] Processed ${i + 1} of ${runners.length} runners (${(((i + 1) / runners.length) * 100).toFixed(1)}%)`);
         }
         
     }catch(e){

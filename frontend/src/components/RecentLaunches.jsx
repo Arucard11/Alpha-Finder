@@ -51,7 +51,7 @@ const RecentLaunches = () => {
           filteredRunners.map(async (runner) => {
             if (runner.logouri) {
               try {
-                const img = new Image();
+                const img = new window.Image();
                 img.src = runner.logouri;
                 await new Promise((resolve, reject) => {
                   img.onload = resolve;
