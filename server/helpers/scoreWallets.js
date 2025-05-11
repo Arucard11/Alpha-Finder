@@ -676,15 +676,26 @@ async function scoreWallets(convertedWallets) {
       // --- Calculate Runner PnL First --- START
       let runnerBuyValue = 0;
       let runnerSellValue = 0;
-      (runner.transactions?.buy || []).forEach(buy => {
+
+      const buys = runner.transactions?.buy || [];
+      const sells = runner.transactions?.sell || [];
+
+      buys.forEach(buy => {
         runnerBuyValue += (buy.amount || 0) * (buy.price || 0);
       });
-      (runner.transactions?.sell || []).forEach(sell => {
+      sells.forEach(sell => {
         runnerSellValue += (sell.amount || 0) * (sell.price || 0);
       });
-      const runnerPnl = runnerSellValue - runnerBuyValue;
-      runner.pnl = isNaN(runnerPnl) ? 0 : runnerPnl; // Store runner PnL
 
+      const hasActualBuys = buys.length > 0;
+      const hasActualSells = sells.length > 0;
+
+      if (!hasActualBuys && hasActualSells) {
+        runner.pnl = 0; // PnL is 0 if there are sells but no buys
+      } else {
+        const calculatedPnl = runnerSellValue - runnerBuyValue;
+        runner.pnl = isNaN(calculatedPnl) ? 0 : calculatedPnl; // Store runner PnL
+      }
       // Add runner values to wallet totals *after* calculating runner PnL
       totalWalletBuyValue += runnerBuyValue;
       totalWalletSellValue += runnerSellValue;
