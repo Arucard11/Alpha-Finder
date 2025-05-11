@@ -472,6 +472,7 @@ async function scoreWallets(convertedWallets) {
 
   // Worker function for a single wallet
   async function processWallet(wallet, index) {
+    console.log(`[processWallet] START for ${wallet?.address}. Wallet state: `, JSON.stringify({ address: wallet?.address, runnerCount: wallet?.runners?.length, runnerSymbols: wallet?.runners?.map(r => r.symbol) }, null, 2));
     // Add a staggered delay based on index to respect rate limits (100 req/sec)
     // With 10 concurrent wallets, stagger by 200ms each to spread out requests
     const staggerDelay = index % 10 * 200;
@@ -862,6 +863,7 @@ async function scoreWallets(convertedWallets) {
 
   // Save to DB and cleanup
   async function finalizeWallet(wallet) {
+    console.log(`[finalizeWallet] PRE-SAVE for ${wallet?.address}. Wallet state: `, JSON.stringify({ address: wallet?.address, runnerCount: wallet?.runners?.length, runnerSymbols: wallet?.runners?.map(r => r.symbol), badges: wallet?.badges, confidence_score: wallet?.confidence_score, pnl: wallet?.pnl }, null, 2));
     for (const runner of wallet.runners) {
       if (runner.timestamps && runner.timestamps.hasOwnProperty('allprices')) delete runner.timestamps.allprices;
       if (typeof runner.score !== 'number' || isNaN(runner.score)) runner.score = 0;

@@ -18,7 +18,6 @@ async function updateData(){
         for(let i = 0; i < runners.length; i++){
             let runner = runners[i];
             let earlyBuyers = await getEarlyBuyers(runner) 
-            console.log("early buyers from main function",earlyBuyers)
             let wallets = await convertWallets(earlyBuyers)
             console.log("wallets from main function",wallets)
             await scoreWallets(wallets)

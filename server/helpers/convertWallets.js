@@ -52,19 +52,29 @@ async function convertWallets(coin) {
           oldWallet.runners = oldWallet.runners || [];
           // Only add runners for this coin if not already present
           // Prevent duplicate runners for the same coin
-          const existingRunnerAddresses = new Set(oldWallet.runners.map(r => r.address + JSON.stringify(r.transactions)));
+          const existingRunnerKeys = new Set(oldWallet.runners.map(r => r.address + JSON.stringify(r.transactions)));
+          let addedNewRunnerForThisCoin = false;
           for (const newRunner of newRunnersForCurrentCoin) {
             const runnerKey = newRunner.address + JSON.stringify(newRunner.transactions);
-            if (!existingRunnerAddresses.has(runnerKey)) {
+            if (!existingRunnerKeys.has(runnerKey)) {
               oldWallet.runners.push(newRunner);
+              addedNewRunnerForThisCoin = true;
             }
           }
-          console.log("[convertWallets] Using old wallet from DB: ", oldWallet.address, ", appended new runners for coin: ", mintInfo.address);
+          if(addedNewRunnerForThisCoin) {
+            console.log("[convertWallets] Using old wallet from DB: ", oldWallet.address, ", appended new runners for coin: ", mintInfo.address);
+          }
+          // Log if wallet now has exactly 2 runners
+          if (oldWallet.runners?.length === 2) {
+            console.log(`[convertWallets] Wallet ${oldWallet.address} now has 2 runners: Symbols [${oldWallet.runners.map(r => r.symbol).join(', ')}]`);
+          }
         } else {
           // Even if not adding new runners, ensure all previously scored runners are preserved
           oldWallet.runners = oldWallet.runners || [];
           console.log("[convertWallets] Using old wallet from DB: ", oldWallet.address, ", new runners for coin: ", mintInfo.address, " were not appended as a scored version already exists.");
         }
+        // Log before returning oldWallet (kept from previous instructions)
+        console.log(`[convertWallets] Wallet ${oldWallet.address} (old): Returning. Final runners count: ${oldWallet.runners?.length}. Runner coins: ${JSON.stringify(oldWallet.runners?.map(r => r.symbol))}`);
         return oldWallet;
       } else {
         // Otherwise, create a new wallet object.
@@ -73,7 +83,6 @@ async function convertWallets(coin) {
           runners: newRunnersForCurrentCoin,
           badges: []
         };
-        console.log("Creating new wallet:", walletAddress);
         return newWallet;
       }
     })
