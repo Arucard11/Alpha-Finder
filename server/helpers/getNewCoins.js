@@ -111,7 +111,7 @@ async function getAllNewCoins(){
                 }
               coin.created_at = coinDate.toISOString()
               newCoins.push(coin)
-              console.log("new coin", coin.name, coin.address)
+              
             }catch(e){
               console.log(e)
             }
