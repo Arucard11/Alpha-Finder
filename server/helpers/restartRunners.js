@@ -189,8 +189,8 @@ async function deleteLowActivityWallets() {
 }
 
 // restartRunners().then(() => console.log("Restarted runners"))
-// You can call the new function like this if needed, for example:
-// correctRunnerPnLForNoBuys().then(() => console.log("[CorrectPnL] Completed PnL correction for no-buy scenarios."));
-deleteLowActivityWallets().then(() => console.log("[DeleteLowActivity] Completed deletion of low activity wallets."));
+
+correctRunnerPnLForNoBuys().then(() => console.log("[CorrectPnL] Completed PnL correction for no-buy scenarios."));
+// deleteLowActivityWallets().then(() => console.log("[DeleteLowActivity] Completed deletion of low activity wallets."));
 
 // removeMev().then(() => console.log("Removed MEV wallets"))

@@ -670,8 +670,6 @@ async function scoreWallets(convertedWallets) {
     badgedWallet.badges = [...new Set(badgedWallet.badges)];
 
     // --- Calculate token scores, wallet score, and PnL --- 
-    let totalWalletBuyValue = 0;
-    let totalWalletSellValue = 0;
     for (const runner of badgedWallet.runners) {
       // --- Calculate Runner PnL First --- START
       let runnerBuyValue = 0;
@@ -690,15 +688,12 @@ async function scoreWallets(convertedWallets) {
       const hasActualBuys = buys.length > 0;
       const hasActualSells = sells.length > 0;
 
-      if (!hasActualBuys && hasActualSells) {
-        runner.pnl = 0; // PnL is 0 if there are sells but no buys
+      if (runnerBuyValue === 0 && hasActualSells) {
+        runner.pnl = 0; // PnL is 0 if there are sells but no (value in) buys
       } else {
         const calculatedPnl = runnerSellValue - runnerBuyValue;
         runner.pnl = isNaN(calculatedPnl) ? 0 : calculatedPnl; // Store runner PnL
       }
-      // Add runner values to wallet totals *after* calculating runner PnL
-      totalWalletBuyValue += runnerBuyValue;
-      totalWalletSellValue += runnerSellValue;
        // --- Calculate Runner PnL First --- END
 
       if (runner.scored) {
@@ -764,9 +759,13 @@ async function scoreWallets(convertedWallets) {
       runner.scored = true;
     }
 
-    // Calculate overall wallet PnL (sum of runner buy/sell values)
-    badgedWallet.pnl = totalWalletSellValue - totalWalletBuyValue;
-    if (isNaN(badgedWallet.pnl)) badgedWallet.pnl = 0;
+    // Calculate overall wallet PnL (sum of individual runner.pnl values)
+    let cumulativeWalletPnl = 0;
+    badgedWallet.runners.forEach(runner => {
+        cumulativeWalletPnl += (runner.pnl || 0); // Summing up the PnL already calculated for each runner
+    });
+    badgedWallet.pnl = cumulativeWalletPnl;
+    if (isNaN(badgedWallet.pnl)) badgedWallet.pnl = 0; // Safeguard for NaN
 
     // Calculate wallet confidence score (based on runner scores and success rate)
     const sumTokenScores = badgedWallet.runners.reduce((acc, r) => acc + (r.score || 0), 0);
