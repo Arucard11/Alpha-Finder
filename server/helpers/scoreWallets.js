@@ -495,14 +495,6 @@ async function scoreWallets(convertedWallets) {
         wallet.runners = [];
     }
 
-    // --- NEW CHECK: If any runner in this wallet's input data already has a defined numerical score, skip all further processing for this wallet ---
-    const alreadyScoredRunnerExists = wallet.runners.some(r => r && typeof r.score === 'number' && !isNaN(r.score));
-    if (alreadyScoredRunnerExists) {
-        console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} (ID: ${wallet.id || 'N/A'}) contains runners that appear to be already scored. Skipping re-processing this wallet to prevent duplication.`);
-        return null; // Skip scoring, badging, and finalization for this wallet
-    }
-    // --- END NEW CHECK ---
-
     let verifiedUniqueBuysCount = 0; // Renamed from totalWalletTokens
     let badgedWallet = wallet;
     badgedWallet.badges = badgedWallet.badges || []; // Ensure badges array exists
