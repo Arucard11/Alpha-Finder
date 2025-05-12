@@ -170,7 +170,8 @@ const sandwichConfig = {
     minTotalTransactions: 4,
     timeThresholdSeconds: 60,
     amountThresholdPercent: 0.60,
-    minSandwichPairs: 1
+    minSandwichPairs: 3,
+    minSameTypeTxCloseness: 3 // NEW: Minimum close buys or sells to flag as bot
 };
 
 /**
@@ -216,7 +217,7 @@ function isPotentialSandwichBot(runner, config) {
         if (sandwichPairCount >= config.minSandwichPairs) return true;
     }
 
-    // New check for closeness among buys or sells
+    // Configurable closeness for same-type txs
     const buyTimestamps = buys.map(tx => tx.timestamp).filter(ts => typeof ts === 'number' && !isNaN(ts));
     const sellTimestamps = sells.map(tx => tx.timestamp).filter(ts => typeof ts === 'number' && !isNaN(ts));
     buyTimestamps.sort((a, b) => a - b);
@@ -238,9 +239,10 @@ function isPotentialSandwichBot(runner, config) {
         }
     }
 
-    // Consider it a potential bot if there are multiple close buys or sells
-    const hasCloseBuys = buyClosenessCount >= config.minSandwichPairs;
-    const hasCloseSells = sellClosenessCount >= config.minSandwichPairs;
+    // Use the new config value for closeness threshold
+    const hasCloseBuys = buyClosenessCount >= (config.minSameTypeTxCloseness || 1);
+    const hasCloseSells = sellClosenessCount >= (config.minSameTypeTxCloseness || 1);
+
     return sandwichPairCount >= config.minSandwichPairs || hasCloseBuys || hasCloseSells;
 }
 
