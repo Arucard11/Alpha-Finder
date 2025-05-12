@@ -8,6 +8,42 @@ const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const SOL_MINT = 'So11111111111111111111111111111111111111112'; // Technically native mint
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // Changed from 90 to 30 days
 
+// Helper function for retrying async operations
+async function retryAsyncOperation(fn, maxAttempts = 3, delayMs = 1000, context = '') {
+  let attempts = 0;
+  while (attempts < maxAttempts) {
+    attempts++;
+    try {
+      return await fn();
+    } catch (error) {
+      const isLastError = attempts === maxAttempts;
+      const errorCode = error.code; // Specific code for SolanaJSONRPCError or system errors
+      // Basic check for some common retriable errors (can be expanded)
+      const isRetriableError = 
+        (error.message && (error.message.includes('fetch failed') || error.message.includes('network error') || error.message.includes('ETIMEDOUT') || error.message.includes('ECONNRESET') || error.message.includes('terminated'))) ||
+        (errorCode && (errorCode === -32019 || errorCode === 'ECONNRESET' || errorCode === 'ETIMEDOUT')) || // -32019: "Failed to query long-term storage"
+        (error.response && typeof error.response.status === 'number' && error.response.status >= 500 && error.response.status < 600);
+
+
+      if (!isLastError && isRetriableError) {
+        const statusInfo = (error.response && error.response.status) ? ` (Status: ${error.response.status})` : '';
+        const codeInfo = errorCode ? ` (Code: ${errorCode})` : '';
+        console.warn(`[Retry] Attempt ${attempts} failed for ${context}${statusInfo}${codeInfo}. Retrying in ${delayMs}ms... Error: ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        delayMs *= 2; // Optional: exponential backoff
+      } else {
+        const statusInfo = (error.response && error.response.status) ? ` (Status: ${error.response.status})` : '';
+        const codeInfo = errorCode ? ` (Code: ${errorCode})` : '';
+        // Log as an error for final attempt or non-retriable error
+        console.error(`[Retry] Final attempt ${attempts} failed for ${context}${statusInfo}${codeInfo} or error not retriable. Error: ${error.message}`);
+        throw error; // Re-throw the error
+      }
+    }
+  }
+  // Should ideally not be reached if maxAttempts > 0
+  throw new Error(`[Retry] Operation failed after ${maxAttempts} attempts for context: ${context}`);
+}
+
 /**
  * Fetches and analyzes transactions for a given wallet from the past 30 days
  * to find tokens bought by spending SOL.
@@ -90,10 +126,17 @@ async function getRecentBuys(walletAddressString) {
            
             
             try {
-              const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 });
+              // Use retryAsyncOperation for getTransaction
+              const tx = await retryAsyncOperation(
+                () => connection.getTransaction(signature, { maxSupportedTransactionVersion: 0 }),
+                3, // maxAttempts
+                1000, // initialDelayMs
+                `getTransaction for signature ${signature}` // context for logging
+              );
 
               if (!tx || !tx.meta || tx.meta.err) {
-                // Skip failed transactions or transactions where fetch failed or meta is missing
+                // Skip failed transactions or transactions where fetch failed post-retry or meta is missing
+                console.warn(`[ProcessTx] Skipping signature ${signature} after retries: Transaction null, meta missing, or error in meta.`);
               } else {
                 const { meta, transaction } = tx;
                 let solSpent = false;
@@ -134,10 +177,9 @@ async function getRecentBuys(walletAddressString) {
                 }
               }
             } catch (err) {
-              console.warn(`Failed to fetch or process transaction ${signature}:`, err.message);
-              if (err.message && (err.message.includes('429') || err.message.toLowerCase().includes('rate limit'))) {
-                console.error(`RATE LIMIT HIT. Consider adding delays or reducing request frequency if this persists.`);
-              }
+              // This catch block will now mostly handle errors if retryAsyncOperation itself fails or re-throws a non-retriable error.
+              console.error(`[ProcessTx] Critical error processing signature ${signature} after retries (or non-retriable error):`, err.message);
+              // No specific rate limit check here as retryAsyncOperation handles logging for retriable issues.
             } finally {
                 processedCount++;
                 if (processedCount % 100 === 0 || processedCount === signatures.length) { // Log every 100 or at the end

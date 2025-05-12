@@ -188,8 +188,65 @@ async function deleteLowActivityWallets() {
     }
 }
 
-// restartRunners().then(() => console.log("Restarted runners"))
+async function adjustHighWalletConfidenceScores() {
+    try {
+        const allWallets = await getAllWallets();
+        if (!allWallets || allWallets.length === 0) {
+            console.log("[AdjustScores] No wallets found to process.");
+            return;
+        }
 
+        console.log(`[AdjustScores] Found ${allWallets.length} wallets. Checking for confidence scores > 20 to adjust...`);
+        let walletsUpdatedCount = 0;
+        let walletsLoggedCount = 0; // Counter for logging
+
+        for (const wallet of allWallets) {
+            const originalRawScore = wallet.confidence_score; // Keep for debug log
+            const scoreAsNumber = parseFloat(wallet.confidence_score);
+
+            // Temporary logging for the first few wallets
+            if (walletsLoggedCount < 10) { // Log details for the first 10 wallets
+                console.log(`[AdjustScores DEBUG] Wallet ID: ${wallet?.id}, Raw_Score: ${originalRawScore}, Type_Raw: ${typeof originalRawScore}, Parsed_Score: ${scoreAsNumber}, Type_Parsed: ${typeof scoreAsNumber}`);
+                walletsLoggedCount++;
+            }
+
+            if (!wallet || !wallet.id || typeof scoreAsNumber !== 'number' || isNaN(scoreAsNumber)) {
+                if (walletsLoggedCount <= 10) { // Also log if a potentially scorable wallet is skipped early
+                     console.log(`[AdjustScores DEBUG] SKIPPING Wallet ID: ${wallet?.id} due to invalid ID or score post-parsing. Raw_Score: ${originalRawScore}, Parsed_Score: ${scoreAsNumber}`);
+                }
+                continue;
+            }
+
+            let currentScore = scoreAsNumber; // Use the parsed number for logic
+            const originalScoreForLogic = scoreAsNumber; // Keep the parsed original for logging comparison
+            let scoreModified = false;
+
+            if (currentScore > 20) {
+                while (currentScore > 20) {
+                    currentScore /= 2;
+                    scoreModified = true;
+                }
+            }
+
+            if (scoreModified) {
+                try {
+                    await updateWallet(wallet.id, 'confidence_score', currentScore); // Save the numerically adjusted score
+                    walletsUpdatedCount++;
+                    console.log(`[AdjustScores] Wallet ${wallet.address} (ID: ${wallet.id}) confidence_score updated from ${originalScoreForLogic.toFixed(4)} to ${currentScore.toFixed(4)}.`);
+                } catch (dbError) {
+                    console.error(`[AdjustScores] Failed to update confidence_score for wallet ${wallet.address} (ID: ${wallet.id}) in DB:`, dbError);
+                }
+            }
+        }
+        console.log(`[AdjustScores] Finished. ${walletsUpdatedCount} wallets had their confidence_score adjusted.`);
+
+    } catch (error) {
+        console.error("[AdjustScores] Error in adjustHighWalletConfidenceScores:", error);
+    }
+}
+
+// restartRunners().then(() => console.log("Restarted runners"))
+adjustHighWalletConfidenceScores().then(() => console.log("[AdjustScores] Completed confidence score adjustment."));
 correctRunnerPnLForNoBuys().then(() => console.log("[CorrectPnL] Completed PnL correction for no-buy scenarios."));
 // deleteLowActivityWallets().then(() => console.log("[DeleteLowActivity] Completed deletion of low activity wallets."));
 
