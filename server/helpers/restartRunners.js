@@ -2,10 +2,10 @@ const {getAllRunners,updateRunner,getAllWallets, deleteWalletById, updateWallet}
 
 
 const sandwichConfig = {
-    minTotalTransactions: 4,
-    timeThresholdSeconds: 60,
+    minTotalTransactions: 1,
+    timeThresholdSeconds: 30,
     amountThresholdPercent: 0.30,
-    minSandwichPairs: 1
+    minSandwichPairs: 3
 };
 
 /**
@@ -245,9 +245,70 @@ async function adjustHighWalletConfidenceScores() {
     }
 }
 
+async function reevaluateBotBadges() {
+    console.log("[ReevaluateBotBadges] Starting re-evaluation of 'bot' badges...");
+    try {
+        const allWallets = await getAllWallets();
+        if (!allWallets || allWallets.length === 0) {
+            console.log("[ReevaluateBotBadges] No wallets found to process.");
+            return;
+        }
+
+        console.log(`[ReevaluateBotBadges] Found ${allWallets.length} wallets. Checking for 'bot' badges to re-evaluate.`);
+        let badgesRemovedCount = 0;
+
+        for (const wallet of allWallets) {
+            if (!wallet || !wallet.id || !Array.isArray(wallet.badges) || !wallet.badges.includes('bot')) {
+                continue; // Skip if no ID, no badges array, or no 'bot' badge
+            }
+
+            if (!wallet.runners || !Array.isArray(wallet.runners) || wallet.runners.length === 0) {
+                // If a wallet has a 'bot' badge but no runners, we might want to remove the badge
+                // as the bot check is runner-based. Or, this scenario might indicate a different type of bot.
+                // For now, let's assume if no runners, it's not a sandwich bot by current definition.
+                console.log(`[ReevaluateBotBadges] Wallet ${wallet.address} (ID: ${wallet.id}) has 'bot' badge but no runners. Removing 'bot' badge.`);
+                wallet.badges = wallet.badges.filter(b => b !== 'bot');
+                try {
+                    await updateWallet(wallet.id, 'badges', wallet.badges);
+                    badgesRemovedCount++;
+                    console.log(`[ReevaluateBotBadges] Wallet ${wallet.address} (ID: ${wallet.id}) 'bot' badge removed (no runners).`);
+                } catch (dbError) {
+                    console.error(`[ReevaluateBotBadges] Failed to update wallet ${wallet.address} (ID: ${wallet.id}) after removing 'bot' badge (no runners):`, dbError);
+                }
+                continue;
+            }
+
+            let isActuallyBot = false;
+            for (const runner of wallet.runners) {
+                if (isPotentialSandwichBot(runner, sandwichConfig)) {
+                    isActuallyBot = true;
+                    break; // Found a runner that exhibits bot behavior, so the wallet keeps the 'bot' badge
+                }
+            }
+
+            if (!isActuallyBot) {
+                console.log(`[ReevaluateBotBadges] Wallet ${wallet.address} (ID: ${wallet.id}) no longer meets bot criteria. Removing 'bot' badge.`);
+                wallet.badges = wallet.badges.filter(b => b !== 'bot');
+                try {
+                    await updateWallet(wallet.id, 'badges', wallet.badges);
+                    badgesRemovedCount++;
+                    console.log(`[ReevaluateBotBadges] Wallet ${wallet.address} (ID: ${wallet.id}) 'bot' badge removed.`);
+                } catch (dbError) {
+                    console.error(`[ReevaluateBotBadges] Failed to update wallet ${wallet.address} (ID: ${wallet.id}) after removing 'bot' badge:`, dbError);
+                }
+            }
+        }
+        console.log(`[ReevaluateBotBadges] Finished. ${badgesRemovedCount} wallets had their 'bot' badge removed.`);
+
+    } catch (error) {
+        console.error("[ReevaluateBotBadges] Error in reevaluateBotBadges:", error);
+    }
+}
+
 // restartRunners().then(() => console.log("Restarted runners"))
-adjustHighWalletConfidenceScores().then(() => console.log("[AdjustScores] Completed confidence score adjustment."));
-correctRunnerPnLForNoBuys().then(() => console.log("[CorrectPnL] Completed PnL correction for no-buy scenarios."));
+// adjustHighWalletConfidenceScores().then(() => console.log("[AdjustScores] Completed confidence score adjustment."));
+// correctRunnerPnLForNoBuys().then(() => console.log("[CorrectPnL] Completed PnL correction for no-buy scenarios."));
 // deleteLowActivityWallets().then(() => console.log("[DeleteLowActivity] Completed deletion of low activity wallets."));
 
 // removeMev().then(() => console.log("Removed MEV wallets"))
+reevaluateBotBadges().then(() => console.log("[ReevaluateBotBadges] Completed re-evaluation of bot badges."));

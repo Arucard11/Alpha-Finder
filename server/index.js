@@ -63,9 +63,9 @@ app.get(/^\/(?!leaderboard|auth|admin|getprices).*/, (req, res) => {
  }).catch((err)=>{
   console.log(err)
  })
-// cron.schedule('0 0 * * *', () => {
-//   updateData()
-// }); 
+cron.schedule('0 */24 * * *', () => {
+  updateData()
+}); 
 
 app.listen(PORT, () => {
   console.log(`Express server running on port ${PORT}`);
