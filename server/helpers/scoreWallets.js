@@ -167,11 +167,11 @@ function totalRunnersSoldPastFiveMillion(runners) {
 
 // Configuration for sandwich bot detection
 const sandwichConfig = {
-    minTotalTransactions: 4,
-    timeThresholdSeconds: 60,
+    minTotalTransactions: 1,
+    timeThresholdSeconds: 20,
     amountThresholdPercent: 0.60,
-    minSandwichPairs: 3,
-    minSameTypeTxCloseness: 3 // NEW: Minimum close buys or sells to flag as bot
+    minSandwichPairs: 1,
+    minSameTypeTxCloseness: 1// NEW: Minimum close buys or sells to flag as bot
 };
 
 /**
