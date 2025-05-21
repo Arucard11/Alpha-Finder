@@ -475,91 +475,102 @@ async function scoreWallets(convertedWallets) {
   // Worker function for a single wallet
   async function processWallet(wallet, index) {
     console.log(`[processWallet] START for ${wallet?.address}. Wallet state: `, JSON.stringify({ address: wallet?.address, runnerCount: wallet?.runners?.length, runnerSymbols: wallet?.runners?.map(r => r.symbol) }, null, 2));
-    // Add a staggered delay based on index to respect rate limits (100 req/sec)
-    // With 10 concurrent wallets, stagger by 200ms each to spread out requests
     const staggerDelay = index % 10 * 200;
     await delay(staggerDelay);
     console.log(`[${new Date().toISOString()}] Delayed ${staggerDelay}ms before starting wallet ${index + 1}/${convertedWallets.length}: ${wallet.address}`);
     
-    // Add a small delay before processing each wallet to potentially avoid rate limits
     await delay(500); 
-    // Ensure wallet and wallet.runners are valid
     if (!wallet || !wallet.address) {
         console.warn(`Skipping processing: Invalid wallet object provided for index ${index}.`, wallet);
-        return null; // Skip this wallet
+        return null;
     }
-    // --- Log Start --- 
     console.log(`[${new Date().toISOString()}] (Wallet ${index + 1}/${convertedWallets.length}) Starting processing for wallet: ${wallet.address}`);
-    // --------------- 
 
     if (!Array.isArray(wallet.runners)) {
         console.warn(`Wallet ${wallet.address} has invalid or missing runners property. Initializing as empty array.`);
         wallet.runners = [];
     }
 
-    let verifiedUniqueBuysCount = 0; // Renamed from totalWalletTokens
-    let badgedWallet = wallet;
+    let badgedWallet = wallet; // Use badgedWallet for modifications
     badgedWallet.badges = badgedWallet.badges || []; // Ensure badges array exists
 
-    // --- NEW: High Volume Activity Bot Check ---
-    try {
-      console.log(`[${new Date().toISOString()}] Checking for high volume activity for wallet: ${wallet.address}`);
-      const isHighVolumeBot = await isHighVolumeActivityBot(wallet.address, connection);
-      if (isHighVolumeBot) {
-        if (!badgedWallet.badges.includes('bot')) {
-          badgedWallet.badges.push('bot');
-        }
-        // If identified as high-volume bot, we might skip further processing or just rely on the 'bot' badge.
-        // For now, we'll let it proceed to sandwich check, but further badge/score calc might be skipped.
-        console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} flagged as high-volume bot. Badge added.`);
-      }
-    } catch (e) {
-      console.error(`Error during high volume activity check for wallet ${wallet.address}:`, e);
-      // Continue processing even if this check fails, to not miss other types of bots or valid wallets.
-    }
-    // --- END NEW: High Volume Activity Bot Check ---
+    // --- BOT STATUS RE-EVALUATION ---
+    let isConsideredBotThisRun = false;
+    let isHighVolumeBotThisRun = false;
 
-    // Only fetch recent buys if not already flagged as a high-volume bot
-    if (!badgedWallet.badges.includes('bot')) {
+    // 1. High Volume Activity Bot Check
     try {
-      // Call the new function to get verified buys from the last 90 days via RPC
-      console.log(`[${new Date().toISOString()}] Fetching verified buys via RPC for ${wallet.address}...`);
-      const boughtMints = await getRecentBuys(wallet.address);
-      verifiedUniqueBuysCount = boughtMints.length;
-      console.log(`[${new Date().toISOString()}] Found ${verifiedUniqueBuysCount} verified buys for ${wallet.address}.`);
-    } catch (e) {
-      console.error(`Error fetching recent buys via RPC for wallet ${wallet.address}:`, e);
-      // Keep verifiedUniqueBuysCount at 0 if RPC call fails
+      console.log(`[${new Date().toISOString()}] Re-checking for high volume activity for wallet: ${wallet.address}`);
+      isHighVolumeBotThisRun = await isHighVolumeActivityBot(wallet.address, connection);
+      if (isHighVolumeBotThisRun) {
+        isConsideredBotThisRun = true;
+        console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} currently meets high-volume bot criteria.`);
       }
+    } catch (e) {
+      console.error(`Error during high volume activity re-check for wallet ${wallet.address}:`, e);
+    }
+
+    // 2. Potential Sandwich Bot Check (run regardless of high-volume status for full re-evaluation)
+    //    If it's already a high-volume bot, it's a bot anyway.
+    //    If not, this check determines if it's a sandwich bot.
+    if (!isConsideredBotThisRun) { // Only set isConsideredBotThisRun if not already true
+        let isSandwichBotThisRun = false;
+        for (const runner of badgedWallet.runners) {
+            if (isPotentialSandwichBot(runner, sandwichConfig)) {
+                isSandwichBotThisRun = true;
+                break; 
+            }
+        }
+        if (isSandwichBotThisRun) {
+            isConsideredBotThisRun = true;
+            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} currently meets sandwich bot criteria.`);
+        }
+    }
+    
+    // 3. Update 'bot' badge based on current evaluation
+    const hadBotBadgeInitially = badgedWallet.badges.includes('bot');
+
+    if (isConsideredBotThisRun) {
+        if (!hadBotBadgeInitially) {
+            badgedWallet.badges.push('bot');
+            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} flagged as bot. Badge added.`);
+        } else {
+            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} confirms bot status.`);
+        }
+    } else { // Not considered a bot in this run
+        if (hadBotBadgeInitially) {
+            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} no longer meets bot criteria. Removing 'bot' badge.`);
+            badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'bot');
+        } else {
+            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} confirmed as not a bot.`);
+        }
+    }
+    // --- END BOT STATUS RE-EVALUATION ---
+
+    let verifiedUniqueBuysCount = 0; 
+
+    // Only fetch recent buys if not currently flagged as a bot
+    if (!badgedWallet.badges.includes('bot')) {
+        try {
+            console.log(`[${new Date().toISOString()}] Fetching verified buys via RPC for ${wallet.address}...`);
+            const boughtMints = await getRecentBuys(wallet.address);
+            verifiedUniqueBuysCount = boughtMints.length;
+            console.log(`[${new Date().toISOString()}] Found ${verifiedUniqueBuysCount} verified buys for ${wallet.address}.`);
+        } catch (e) {
+            console.error(`Error fetching recent buys via RPC for wallet ${wallet.address}:`, e);
+        }
     } else {
-      console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} is flagged as a high-volume bot, skipping getRecentBuys.`);
-      verifiedUniqueBuysCount = 0; // Ensure count is 0 if skipped
+      console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} is currently flagged as a bot, skipping getRecentBuys.`);
+      verifiedUniqueBuysCount = 0;
     }
 
     const runnerCount = badgedWallet.runners.length;
+    console.log(`[${new Date().toISOString()}] (Wallet ${index + 1}/${convertedWallets.length}) Starting badge calculation for wallet: ${wallet.address} (Current bot status: ${badgedWallet.badges.includes('bot')})`);
+    
+    // The existing PRE-CHECK FOR BOT BEHAVIOR (Sandwich etc.) block is now redundant here
+    // as bot status has been fully determined above. We can remove it or ensure it doesn't conflict.
+    // For safety, the logic above now handles the bot badge correctly.
 
-    // --- Log Badge Calculation Start ---
-    console.log(`[${new Date().toISOString()}] (Wallet ${index + 1}/${convertedWallets.length}) Starting badge calculation for wallet: ${wallet.address}`);
-    // ---------------------------------
-
-    // --- PRE-CHECK FOR BOT BEHAVIOR (Sandwich etc.) ---
-    // Only run this if not already flagged as a high-volume bot, as that's a more general bot flag.
-    if (!badgedWallet.badges.includes('bot')) {
-    for (const runner of badgedWallet.runners) {
-      if (isPotentialSandwichBot(runner, sandwichConfig)) {
-        if (!badgedWallet.badges.includes('bot')) {
-          badgedWallet.badges.push('bot');
-        }
-            console.log(`[${new Date().toISOString()}] Wallet ${wallet.address} flagged as potential sandwich bot. Badge added.`);
-        break; // Wallet is flagged as bot, no need to check other runners for this purpose.
-          }
-      }
-    }
-    // --- END PRE-CHECK FOR BOT BEHAVIOR ---
-
-    // Define all badges in this category + conflicting ones
-    // This list is used for cleaning up badges before assigning a new percentage-based badge
-    // or the 'one hit wonder' badge.
     const percentageBadgesToRemove = [
         'ultimate trader', 'elite trader', 'grandmaster trader', 'master trader',
         'expert trader', 'highly specialized trader', 'specialized trader',
@@ -568,7 +579,7 @@ async function scoreWallets(convertedWallets) {
     ];
 
     // --- Ratio-Based Badge Calculation --- START
-    // Skip percentage badge calculation if 'bot' badge is already present
+    // Skip percentage badge calculation if 'bot' badge is present (based on current re-evaluation)
     if (!badgedWallet.badges.includes('bot')) {
         const THIRTY_DAYS_SEC = 30 * 24 * 60 * 60; // Changed from NINETY_DAYS_SEC
         const thirtyDaysAgoSec = Math.floor(Date.now() / 1000) - THIRTY_DAYS_SEC; // Renamed from ninetyDaysAgoSec
@@ -606,7 +617,7 @@ async function scoreWallets(convertedWallets) {
     // --- Ratio-Based Badge Calculation --- END
 
     // --- Other Badge Logic --- START
-    // Only assign these if not a bot
+    // Only assign these if not a bot (based on current re-evaluation)
     if (!badgedWallet.badges.includes('bot')) {
     // 1) One-Hit Wonder (check this first)
     if (runnerCount === 1) {
@@ -664,11 +675,6 @@ async function scoreWallets(convertedWallets) {
     }
     // --- Other Badge Logic --- END
 
-
-    // Final cleanup - remove duplicates and ensure one hit wonder is removed if multiple runners
-    if (runnerCount > 1) {
-      badgedWallet.badges = badgedWallet.badges.filter(b => b !== 'one hit wonder');
-    }
     badgedWallet.badges = [...new Set(badgedWallet.badges)];
 
     // --- Calculate token scores, wallet score, and PnL --- 

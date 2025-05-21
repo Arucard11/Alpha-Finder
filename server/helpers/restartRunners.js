@@ -305,10 +305,68 @@ async function reevaluateBotBadges() {
     }
 }
 
+async function deduplicateRunnersInWallets() {
+    console.log("[DeduplicateRunners] Starting deduplication of runners in wallets...");
+    try {
+        const allWallets = await getAllWallets();
+        if (!allWallets || allWallets.length === 0) {
+            console.log("[DeduplicateRunners] No wallets found to process.");
+            return;
+        }
+
+        console.log(`[DeduplicateRunners] Found ${allWallets.length} wallets. Checking for duplicate runners.`);
+        let walletsModifiedCount = 0;
+
+        for (const wallet of allWallets) {
+            if (!wallet || !wallet.id || !Array.isArray(wallet.runners) || wallet.runners.length === 0) {
+                continue; // Skip if no ID, no runners array, or empty runners
+            }
+
+            const originalRunnerCount = wallet.runners.length;
+            const uniqueRunners = [];
+            const seenRunnerAddresses = new Set();
+
+            for (const runner of wallet.runners) {
+                // Assuming runner.address is the unique identifier for a runner
+                // If a runner might not have an address, or another field should be used for uniqueness, adjust this.
+                if (runner && runner.address && !seenRunnerAddresses.has(runner.address)) {
+                    uniqueRunners.push(runner);
+                    seenRunnerAddresses.add(runner.address);
+                } else if (runner && !runner.address) {
+                    // Handle runners without an address if necessary - e.g., add them by default or log a warning
+                    // For now, we'll add them if they are present, to not lose data, but they won't be part of address-based deduplication.
+                    // A more robust approach might be to filter these out or use a different unique key if applicable.
+                    uniqueRunners.push(runner); 
+                    console.warn(`[DeduplicateRunners] Wallet ${wallet.address} (ID: ${wallet.id}) has a runner without an address. It will be kept but not deduplicated by address.`);
+                } else if (runner && runner.address && seenRunnerAddresses.has(runner.address)){
+                    console.log(`[DeduplicateRunners] Wallet ${wallet.address} (ID: ${wallet.id}) - Duplicate runner found and removed: ${runner.symbol || runner.address}`);
+                }
+            }
+
+            if (uniqueRunners.length < originalRunnerCount) {
+                console.log(`[DeduplicateRunners] Wallet ${wallet.address} (ID: ${wallet.id}) had ${originalRunnerCount - uniqueRunners.length} duplicate runner(s) removed.`);
+                wallet.runners = uniqueRunners;
+                try {
+                    await updateWallet(wallet.id, 'runners', wallet.runners);
+                    walletsModifiedCount++;
+                    console.log(`[DeduplicateRunners] Wallet ${wallet.address} (ID: ${wallet.id}) updated with deduplicated runners.`);
+                } catch (dbError) {
+                    console.error(`[DeduplicateRunners] Failed to update wallet ${wallet.address} (ID: ${wallet.id}) after deduplicating runners:`, dbError);
+                }
+            }
+        }
+        console.log(`[DeduplicateRunners] Finished. ${walletsModifiedCount} wallets had duplicate runners removed and were updated.`);
+
+    } catch (error) {
+        console.error("[DeduplicateRunners] Error in deduplicateRunnersInWallets:", error);
+    }
+}
+
 // restartRunners().then(() => console.log("Restarted runners"))
 // adjustHighWalletConfidenceScores().then(() => console.log("[AdjustScores] Completed confidence score adjustment."));
 // correctRunnerPnLForNoBuys().then(() => console.log("[CorrectPnL] Completed PnL correction for no-buy scenarios."));
 // deleteLowActivityWallets().then(() => console.log("[DeleteLowActivity] Completed deletion of low activity wallets."));
 
 // removeMev().then(() => console.log("Removed MEV wallets"))
-reevaluateBotBadges().then(() => console.log("[ReevaluateBotBadges] Completed re-evaluation of bot badges."));
+// reevaluateBotBadges().then(() => console.log("[ReevaluateBotBadges] Completed re-evaluation of bot badges."));
+deduplicateRunnersInWallets().then(() => console.log("[DeduplicateRunners] Completed deduplication of runners in wallets."));
